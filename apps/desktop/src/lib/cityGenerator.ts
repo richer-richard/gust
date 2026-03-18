@@ -12,6 +12,14 @@ export interface BuildingData {
   colorB: number;
   windowSeed: number;
   zone: 'downtown' | 'midrise' | 'suburban';
+  /** Number of floors (height / 3.5m) */
+  floors: number;
+  /** Windows per floor on front/back face */
+  windowsPerFloor: number;
+  /** Windows per floor on side face */
+  sideWindowsPerFloor: number;
+  /** Fraction of windows that are lit (0-1) */
+  litPercentage: number;
 }
 
 export interface CityData {
@@ -128,6 +136,17 @@ export function generateCity(seed = 42): CityData {
           colorB = 0.3 + rand() * 0.15;
         }
 
+        // Compute window metadata for atlas-based rendering
+        const floorHeight = 3.5;
+        const windowBayWidth = 2.0;
+        const floors = Math.max(1, Math.floor(height / floorHeight));
+        const windowsPerFloor = Math.max(1, Math.floor(width / windowBayWidth));
+        const sideWindowsPerFloor = Math.max(1, Math.floor(depth / windowBayWidth));
+        const litPercentage =
+          zone === 'downtown' ? 0.55 + rand() * 0.3
+            : zone === 'midrise' ? 0.35 + rand() * 0.25
+              : 0.15 + rand() * 0.2;
+
         buildings.push({
           x: blockX + localX,
           z: blockZ + localZ,
@@ -139,6 +158,10 @@ export function generateCity(seed = 42): CityData {
           colorB,
           windowSeed: rand() * 1000,
           zone,
+          floors,
+          windowsPerFloor,
+          sideWindowsPerFloor,
+          litPercentage,
         });
       }
     }
