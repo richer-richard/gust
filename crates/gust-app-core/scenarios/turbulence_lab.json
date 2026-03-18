@@ -1,0 +1,46 @@
+{
+  "id": "turbulence_lab",
+  "name": "Urban Survey",
+  "description": "Survey flight through a city district at mid-altitude with moderate gust cells and a waypoint path weaving between buildings.",
+  "baseWind": { "x": 1.2, "y": 0.6, "z": 0.0 },
+  "gustAmplitude": 1.8,
+  "gustCellSize": 15.0,
+  "durationS": 45.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.0,
+    "imuNoiseScale": 0.15
+  },
+  "obstacles": [
+    {
+      "center": { "x": 25.0, "y": 8.0, "z": 18.0 },
+      "size": { "x": 14.0, "y": 14.0, "z": 36.0 }
+    },
+    {
+      "center": { "x": 55.0, "y": -12.0, "z": 22.0 },
+      "size": { "x": 12.0, "y": 12.0, "z": 44.0 }
+    },
+    {
+      "center": { "x": 85.0, "y": 5.0, "z": 15.0 },
+      "size": { "x": 16.0, "y": 10.0, "z": 30.0 }
+    }
+  ],
+  "waypoints": [
+    {
+      "position": { "x": 0.0, "y": 0.0, "z": 25.0 },
+      "holdS": 1.5
+    },
+    {
+      "position": { "x": 35.0, "y": -5.0, "z": 30.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": 65.0, "y": 10.0, "z": 35.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 95.0, "y": -3.0, "z": 28.0 },
+      "holdS": 1.5
+    }
+  ]
+}

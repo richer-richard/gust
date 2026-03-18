@@ -1,0 +1,8 @@
+.DS_Store
+node_modules
+dist
+target
+Cargo.lock
+apps/desktop/src-tauri/target
+apps/desktop/src-tauri/gen
+

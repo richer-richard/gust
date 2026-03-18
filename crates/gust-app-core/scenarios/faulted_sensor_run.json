@@ -1,0 +1,46 @@
+{
+  "id": "faulted_sensor_run",
+  "name": "Storm Flight",
+  "description": "Urban flight with degraded sensors: GPS dropout cycles, biased altimeter, and noisy IMU. Tests recovery behavior under realistic urban multipath and weather conditions.",
+  "baseWind": { "x": 1.5, "y": 0.8, "z": 0.0 },
+  "gustAmplitude": 2.5,
+  "gustCellSize": 12.0,
+  "durationS": 40.0,
+  "faults": {
+    "gpsDropoutEnabled": true,
+    "altimeterBiasM": 0.65,
+    "imuNoiseScale": 0.5
+  },
+  "obstacles": [
+    {
+      "center": { "x": 30.0, "y": -8.0, "z": 20.0 },
+      "size": { "x": 12.0, "y": 16.0, "z": 40.0 }
+    },
+    {
+      "center": { "x": 60.0, "y": 10.0, "z": 24.0 },
+      "size": { "x": 14.0, "y": 14.0, "z": 48.0 }
+    },
+    {
+      "center": { "x": 90.0, "y": -5.0, "z": 18.0 },
+      "size": { "x": 10.0, "y": 12.0, "z": 36.0 }
+    }
+  ],
+  "waypoints": [
+    {
+      "position": { "x": 0.0, "y": 0.0, "z": 25.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": 35.0, "y": 5.0, "z": 30.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 70.0, "y": -6.0, "z": 28.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 100.0, "y": 2.0, "z": 25.0 },
+      "holdS": 1.5
+    }
+  ]
+}

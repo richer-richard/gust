@@ -1,0 +1,13 @@
+{
+  "name": "gust",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "pnpm --filter @gust/desktop dev",
+    "dev:web": "pnpm --filter @gust/desktop dev:web",
+    "build": "pnpm --filter @gust/desktop build",
+    "build:web": "pnpm --filter @gust/desktop build:web",
+    "check": "pnpm --filter @gust/desktop check"
+  }
+}
+

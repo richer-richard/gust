@@ -1,0 +1,62 @@
+{
+  "id": "canyon_recovery",
+  "name": "Downtown Canyon",
+  "description": "Navigate between tall downtown buildings with severe gusts funneling through the urban canyon. High obstacle pressure near the flight path.",
+  "baseWind": { "x": 2.0, "y": -0.8, "z": 0.0 },
+  "gustAmplitude": 3.0,
+  "gustCellSize": 10.0,
+  "durationS": 50.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.2,
+    "imuNoiseScale": 0.3
+  },
+  "obstacles": [
+    {
+      "center": { "x": 20.0, "y": 15.0, "z": 30.0 },
+      "size": { "x": 12.0, "y": 18.0, "z": 60.0 }
+    },
+    {
+      "center": { "x": 20.0, "y": -15.0, "z": 25.0 },
+      "size": { "x": 14.0, "y": 16.0, "z": 50.0 }
+    },
+    {
+      "center": { "x": 50.0, "y": 12.0, "z": 35.0 },
+      "size": { "x": 10.0, "y": 20.0, "z": 70.0 }
+    },
+    {
+      "center": { "x": 50.0, "y": -14.0, "z": 28.0 },
+      "size": { "x": 12.0, "y": 18.0, "z": 56.0 }
+    },
+    {
+      "center": { "x": 80.0, "y": 10.0, "z": 32.0 },
+      "size": { "x": 14.0, "y": 14.0, "z": 64.0 }
+    },
+    {
+      "center": { "x": 80.0, "y": -16.0, "z": 22.0 },
+      "size": { "x": 10.0, "y": 16.0, "z": 44.0 }
+    }
+  ],
+  "waypoints": [
+    {
+      "position": { "x": 0.0, "y": 0.0, "z": 28.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 20.0, "y": 0.0, "z": 32.0 },
+      "holdS": 0.8
+    },
+    {
+      "position": { "x": 50.0, "y": -2.0, "z": 35.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 80.0, "y": -3.0, "z": 30.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 110.0, "y": 0.0, "z": 25.0 },
+      "holdS": 1.5
+    }
+  ]
+}

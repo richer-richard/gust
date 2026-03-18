@@ -1,0 +1,14 @@
+[package]
+name = "gust-sim-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+links = "gust_sim_core"
+
+[dependencies]
+anyhow.workspace = true
+gust-types = { path = "../gust-types" }
+
+[build-dependencies]
+cmake.workspace = true
+
