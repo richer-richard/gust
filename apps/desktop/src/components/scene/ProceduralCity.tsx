@@ -157,10 +157,10 @@ const buildingFragmentShader = /* glsl */ `
       }
     }
     
-    // Distance fog
+    // Distance fog — matches scene fog (near 100, far 900)
     float dist = length(vWorldPosition - cameraPosition);
-    float fogFactor = 1.0 - exp(-dist * 0.003);
-    vec3 fogColor = vec3(0.08, 0.1, 0.16);
+    float fogFactor = smoothstep(100.0, 900.0, dist);
+    vec3 fogColor = vec3(0.10, 0.125, 0.19);
     finalColor = mix(finalColor, fogColor, fogFactor);
     
     gl_FragColor = vec4(finalColor, 1.0);
@@ -239,9 +239,9 @@ const groundFragmentShader = /* glsl */ `
       color = sidewalkColor;
     }
     
-    // Distance fog
-    float fogFactor = 1.0 - exp(-vDist * 0.003);
-    vec3 fogColor = vec3(0.08, 0.1, 0.16);
+    // Distance fog — matches scene fog (near 100, far 900)
+    float fogFactor = smoothstep(100.0, 900.0, vDist);
+    vec3 fogColor = vec3(0.10, 0.125, 0.19);
     color = mix(color, fogColor, fogFactor);
     
     gl_FragColor = vec4(color, 1.0);

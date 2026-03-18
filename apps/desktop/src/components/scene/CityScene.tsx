@@ -22,11 +22,11 @@ interface CitySceneProps {
 export function CityScene({ snapshot, cameraMode }: CitySceneProps) {
   const dronePos = snapshot?.drone.position ?? { x: 0, y: 0, z: 25 };
 
-  // Camera initial position looking at drone from behind and above
+  // Camera initial position: elevated 45° view showing city skyline with drone
   const initialCamPos: [number, number, number] = [
-    dronePos.x - 8,
-    dronePos.z + 12,
-    -dronePos.y + 8,
+    dronePos.x - 40,
+    dronePos.z + 50,
+    -dronePos.y + 40,
   ];
 
   return (
@@ -90,8 +90,8 @@ function CameraController({
         enablePan
         enableRotate
         enableZoom
-        maxDistance={200}
-        minDistance={1}
+        maxDistance={500}
+        minDistance={2}
         maxPolarAngle={Math.PI * 0.85}
       />
     );

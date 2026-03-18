@@ -142,7 +142,7 @@ export function WindParticles({ snapshot }: WindParticlesProps) {
             vDist = -mvPos.z;
             gl_Position = projectionMatrix * mvPos;
             // Size based on distance and life
-            gl_PointSize = max(1.0, 4.0 * aLife * (200.0 / -mvPos.z));
+            gl_PointSize = clamp(2.5 * aLife * (120.0 / -mvPos.z), 1.0, 18.0);
           }
         `,
         fragmentShader: /* glsl */ `
@@ -165,7 +165,7 @@ export function WindParticles({ snapshot }: WindParticlesProps) {
             
             // Fade with distance
             float distFade = 1.0 - smoothstep(30.0, 80.0, vDist);
-            alpha *= distFade * (0.3 + uGustStrength * 0.4);
+            alpha *= distFade * (0.12 + uGustStrength * 0.25);
             
             gl_FragColor = vec4(color, alpha);
           }

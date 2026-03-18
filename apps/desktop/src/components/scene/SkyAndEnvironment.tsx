@@ -58,8 +58,8 @@ export function SkyAndEnvironment() {
         intensity={0.35}
       />
 
-      {/* Exponential fog for depth */}
-      <fog attach="fog" args={['#1a2030', 50, 500]} />
+      {/* Distance fog — city is 600m across so far plane needs to cover most of it */}
+      <fog attach="fog" args={['#1a2030', 100, 900]} />
     </>
   );
 }
