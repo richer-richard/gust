@@ -65,6 +65,7 @@ GustStateFrame to_c(const gust::sim::StateFrame &frame) {
   out.drone.collision = frame.drone.collision ? 1u : 0u;
   out.drone.closest_obstacle_distance = frame.drone.closest_obstacle_distance;
   out.drone.recovery_margin = frame.drone.recovery_margin;
+  out.drone.health = frame.drone.health;
   out.sensors.gps_position = to_c(frame.sensors.gps_position);
   out.sensors.gps_valid = frame.sensors.gps_valid ? 1u : 0u;
   out.sensors.imu_accel = to_c(frame.sensors.imu_accel);
@@ -139,6 +140,14 @@ extern "C" void gust_sim_step(GustSimHandle *handle, double dt) {
   }
 
   handle->simulator.step(dt);
+}
+
+extern "C" void gust_sim_take_damage(GustSimHandle *handle, double amount) {
+  if (handle == nullptr) {
+    return;
+  }
+
+  handle->simulator.take_damage(amount);
 }
 
 extern "C" GustStateFrame gust_sim_get_frame(const GustSimHandle *handle) {

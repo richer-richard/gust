@@ -12,12 +12,12 @@ namespace {
 constexpr double kGravity = 9.81;
 constexpr double kMassKg = 1.55;
 constexpr double kArmLengthM = 0.22;
-constexpr double kMaxThrustPerRotorN = 6.2;
+constexpr double kMaxThrustPerRotorN = 15.0;
 constexpr double kYawTorqueCoeff = 0.07;
 constexpr double kAngularDamping = 0.16;
 constexpr double kLinearDrag = 1.18;
 constexpr double kDroneRadius = 0.26;
-constexpr double kMaxRpm = 6400.0;
+constexpr double kMaxRpm = 10000.0;
 constexpr std::array<double, 3> kInertia = {0.028, 0.028, 0.052};
 
 Vec3 make_vec(double x, double y, double z) {
@@ -142,20 +142,21 @@ void Simulator::reset(Scenario scenario) {
   scenario_ = std::move(scenario);
   tick_ = 0;
   sim_time_s_ = 0.0;
-  position_ = {0.0, 0.0, 25.0};
+  position_ = {0.0, 0.0, 30.0};
   velocity_ = {};
   euler_ = {};
   angular_velocity_ = {};
   last_world_accel_ = {};
   last_gps_position_ = position_;
   current_wind_ = scenario_.base_wind;
-  rotor_command_ = {0.62, 0.62, 0.62, 0.62};
-  rotor_rpm_ = {4000.0, 4000.0, 4000.0, 4000.0};
+  rotor_command_ = {0.615, 0.615, 0.615, 0.615};
+  rotor_rpm_ = {5200.0, 5200.0, 5200.0, 5200.0};
   collision_ = false;
   closest_obstacle_distance_ = 50.0;
   recovery_margin_ = 1.0;
   gust_strength_ = 0.0;
   turbulence_index_ = 0.0;
+  health_ = 1.0;
 }
 
 void Simulator::set_rotor_command(const std::array<double, 4> &command) {
@@ -192,10 +193,13 @@ void Simulator::step(double dt) {
   turbulence_index_ =
       std::clamp(gust_strength_ / std::max(0.5, scenario_.gust_amplitude * 1.6), 0.0, 1.0);
 
+  // Health-based throttle cap: at low health rotors are limited
+  const auto health_cap = (health_ > 0.0) ? ((health_ < 0.2) ? 0.6 : 1.0) : 0.0;
+
   std::array<double, 4> thrust{};
   double total_thrust = 0.0;
   for (std::size_t i = 0; i < rotor_command_.size(); ++i) {
-    const auto cmd = std::clamp(rotor_command_[i], 0.0, 1.0);
+    const auto cmd = std::clamp(rotor_command_[i] * health_cap, 0.0, 1.0);
     thrust[i] = cmd * kMaxThrustPerRotorN;
     total_thrust += thrust[i];
     rotor_rpm_[i] = 2400.0 + std::sqrt(cmd) * (kMaxRpm - 2400.0);
@@ -275,8 +279,14 @@ void Simulator::resolve_collisions() {
     position_ += normal * (-signed_distance + 1e-3);
     const auto normal_speed = dot(velocity_, normal);
     if (normal_speed < 0.0) {
-      velocity_ -= normal * (1.25 * normal_speed);
+      // Velocity-scaled restitution: harder hits bounce more
+      const auto restitution = 1.25 + std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.5);
+      velocity_ -= normal * (restitution * normal_speed);
       velocity_ *= 0.82;
+
+      // Apply damage proportional to impact speed
+      const auto impact_damage = std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.25);
+      health_ = std::max(0.0, health_ - impact_damage);
     }
 
     angular_velocity_ *= 0.88;
@@ -349,6 +359,7 @@ StateFrame Simulator::snapshot() const {
   frame.drone.collision = collision_;
   frame.drone.closest_obstacle_distance = closest_obstacle_distance_;
   frame.drone.recovery_margin = recovery_margin_;
+  frame.drone.health = health_;
   frame.environment.wind_world = current_wind_;
   frame.environment.gust_strength = gust_strength_;
   frame.environment.turbulence_index = turbulence_index_;
@@ -356,6 +367,10 @@ StateFrame Simulator::snapshot() const {
   frame.waypoints = scenario_.waypoints;
   frame.sensors = const_cast<Simulator *>(this)->build_sensor_packet(last_world_accel_);
   return frame;
+}
+
+void Simulator::take_damage(double amount) {
+  health_ = std::max(0.0, health_ - std::clamp(amount, 0.0, 1.0));
 }
 
 }  // namespace gust::sim

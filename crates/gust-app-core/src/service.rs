@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use gust_sim_bridge::{NativeFrame, Simulator};
 use gust_types::{
-    ControllerMode, EvaluationReport, RunState, ScenarioConfig, ScenarioSummary, SimulationSnapshot,
+    AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioConfig,
+    ScenarioSummary, SimulationSnapshot,
 };
 use parking_lot::{Mutex, RwLock};
 
@@ -34,16 +35,16 @@ impl SimulationService {
             .context("no built-in scenarios were loaded")?;
 
         let mut simulator = Simulator::new(&active_scenario)?;
-        let mut controller = ControllerState::new(ControllerMode::AdaptiveSupervisor);
+        let mut controller = ControllerState::new(ControllerMode::Player);
         controller.reset();
 
         let initial_frame = simulator.frame();
         let initial_snapshot = build_snapshot(
             &initial_frame,
-            RunState::Stopped,
+            RunState::Running,
             controller.mode(),
             &active_scenario,
-            "Ready to start the simulation.".into(),
+            "Player control active — use WASD/Space/Shift to fly.".into(),
             None,
         );
 
@@ -52,8 +53,8 @@ impl SimulationService {
             scenarios,
             active_scenario_id: active_scenario.id.clone(),
             controller,
-            run_state: RunState::Stopped,
-            last_status: "Ready to start the simulation.".into(),
+            run_state: RunState::Running,
+            last_status: "Player control active — use WASD/Space/Shift to fly.".into(),
             last_snapshot: initial_snapshot.clone(),
         }));
         let snapshot = Arc::new(RwLock::new(initial_snapshot));
@@ -108,6 +109,26 @@ impl SimulationService {
         let snapshot = engine.last_snapshot.clone();
         *self.snapshot.write() = snapshot.clone();
         Ok(snapshot)
+    }
+
+    pub fn set_player_input(&self, input: PlayerInput) {
+        let mut engine = self.engine.lock();
+        engine.controller.set_player_input(input);
+    }
+
+    pub fn set_assist_level(&self, level: AssistLevel) -> Result<SimulationSnapshot> {
+        let mut engine = self.engine.lock();
+        engine.controller.set_assist_level(level);
+        engine.last_status = format!("Assist level: {:?}", level);
+        engine.sync_snapshot(None)?;
+        let snapshot = engine.last_snapshot.clone();
+        *self.snapshot.write() = snapshot.clone();
+        Ok(snapshot)
+    }
+
+    pub fn take_damage(&self, amount: f64) {
+        let mut engine = self.engine.lock();
+        engine.simulator.take_damage(amount);
     }
 
     pub fn run_quick_evaluation(&self) -> Result<EvaluationReport> {

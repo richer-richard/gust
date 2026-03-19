@@ -57,6 +57,7 @@ struct DroneFrame {
   bool collision = false;
   double closest_obstacle_distance = 0.0;
   double recovery_margin = 0.0;
+  double health = 1.0;
 };
 
 struct EnvironmentFrame {
@@ -82,6 +83,7 @@ class Simulator {
   void reset(Scenario scenario);
   void set_rotor_command(const std::array<double, 4> &command);
   void step(double dt);
+  void take_damage(double amount);
   [[nodiscard]] StateFrame snapshot() const;
 
  private:
@@ -111,6 +113,7 @@ class Simulator {
   double recovery_margin_ = 1.0;
   double gust_strength_ = 0.0;
   double turbulence_index_ = 0.0;
+  double health_ = 1.0;
 };
 
 }  // namespace gust::sim

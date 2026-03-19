@@ -76,6 +76,7 @@ pub struct DroneTelemetry {
     pub collision: bool,
     pub closest_obstacle_distance: f64,
     pub recovery_margin: f64,
+    pub health: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -110,10 +111,29 @@ pub enum RunState {
 #[serde(rename_all = "snake_case")]
 pub enum ControllerMode {
     #[default]
+    Player,
     Stabilize,
     WaypointFollow,
     Recovery,
     AdaptiveSupervisor,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssistLevel {
+    Manual,
+    #[default]
+    Stabilized,
+    CruiseAssist,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerInput {
+    pub pitch: f64,
+    pub roll: f64,
+    pub yaw: f64,
+    pub throttle: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AssistLevel,
   ControllerMode,
   EvaluationReport,
+  PlayerInput,
   RunState,
   ScenarioSummary,
   SimulationSnapshot,
@@ -31,7 +33,18 @@ export async function activateScenario(
   return invoke<SimulationSnapshot>("activate_scenario", { scenarioId });
 }
 
+export async function setPlayerInput(input: PlayerInput): Promise<void> {
+  return invoke<void>("set_player_input", { input });
+}
+
+export async function takeDamage(amount: number): Promise<void> {
+  return invoke<void>("take_damage", { amount });
+}
+
+export async function setAssistLevel(level: AssistLevel): Promise<SimulationSnapshot> {
+  return invoke<SimulationSnapshot>("set_assist_level", { level });
+}
+
 export async function runQuickEvaluation(): Promise<EvaluationReport> {
   return invoke<EvaluationReport>("run_quick_evaluation");
 }
-

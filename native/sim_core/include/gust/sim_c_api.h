@@ -66,6 +66,7 @@ typedef struct GustDroneFrame {
   uint32_t collision;
   double closest_obstacle_distance;
   double recovery_margin;
+  double health;
 } GustDroneFrame;
 
 typedef struct GustEnvironmentFrame {
@@ -93,6 +94,7 @@ void gust_sim_destroy(GustSimHandle *handle);
 void gust_sim_reset(GustSimHandle *handle, const GustScenarioConfig *config);
 void gust_sim_set_rotor_command(GustSimHandle *handle, GustRotorCommand command);
 void gust_sim_step(GustSimHandle *handle, double dt);
+void gust_sim_take_damage(GustSimHandle *handle, double amount);
 GustStateFrame gust_sim_get_frame(const GustSimHandle *handle);
 
 #ifdef __cplusplus

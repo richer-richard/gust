@@ -57,6 +57,12 @@ impl Simulator {
         }
     }
 
+    pub fn take_damage(&mut self, amount: f64) {
+        unsafe {
+            gust_sim_take_damage(self.raw.as_ptr(), amount);
+        }
+    }
+
     pub fn frame(&mut self) -> NativeFrame {
         let frame = unsafe { gust_sim_get_frame(self.raw.as_ptr()) };
         NativeFrame::from(frame)
@@ -184,6 +190,7 @@ struct GustDroneFrame {
     collision: u32,
     closest_obstacle_distance: f64,
     recovery_margin: f64,
+    health: f64,
 }
 
 #[repr(C)]
@@ -249,6 +256,7 @@ impl From<GustStateFrame> for NativeFrame {
                 collision: value.drone.collision != 0,
                 closest_obstacle_distance: value.drone.closest_obstacle_distance,
                 recovery_margin: value.drone.recovery_margin,
+                health: value.drone.health,
             },
             sensors: SensorTelemetry {
                 gps_position: value.sensors.gps_position.into(),
@@ -342,5 +350,6 @@ unsafe extern "C" {
     fn gust_sim_reset(handle: *mut GustSimHandle, config: *const GustScenarioConfig);
     fn gust_sim_set_rotor_command(handle: *mut GustSimHandle, command: GustRotorCommand);
     fn gust_sim_step(handle: *mut GustSimHandle, dt: f64);
+    fn gust_sim_take_damage(handle: *mut GustSimHandle, amount: f64);
     fn gust_sim_get_frame(handle: *const GustSimHandle) -> GustStateFrame;
 }

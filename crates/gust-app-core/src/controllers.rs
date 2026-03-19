@@ -1,5 +1,5 @@
 use gust_sim_bridge::NativeFrame;
-use gust_types::{ControllerMode, ScenarioConfig, Vec3};
+use gust_types::{AssistLevel, ControllerMode, PlayerInput, ScenarioConfig, Vec3};
 
 const HOVER_THROTTLE: f64 = 0.615;
 
@@ -12,6 +12,7 @@ pub struct ControllerOutput {
 }
 
 pub(crate) enum ControllerState {
+    Player(PlayerController),
     Stabilize(StabilizeController),
     WaypointFollow(WaypointController),
     Recovery(RecoveryController),
@@ -21,6 +22,7 @@ pub(crate) enum ControllerState {
 impl ControllerState {
     pub fn new(mode: ControllerMode) -> Self {
         match mode {
+            ControllerMode::Player => Self::Player(PlayerController::default()),
             ControllerMode::Stabilize => Self::Stabilize(StabilizeController::default()),
             ControllerMode::WaypointFollow => Self::WaypointFollow(WaypointController::default()),
             ControllerMode::Recovery => Self::Recovery(RecoveryController::default()),
@@ -32,6 +34,7 @@ impl ControllerState {
 
     pub fn mode(&self) -> ControllerMode {
         match self {
+            Self::Player(_) => ControllerMode::Player,
             Self::Stabilize(_) => ControllerMode::Stabilize,
             Self::WaypointFollow(_) => ControllerMode::WaypointFollow,
             Self::Recovery(_) => ControllerMode::Recovery,
@@ -41,10 +44,23 @@ impl ControllerState {
 
     pub fn reset(&mut self) {
         match self {
+            Self::Player(controller) => controller.reset(),
             Self::Stabilize(controller) => controller.reset(),
             Self::WaypointFollow(controller) => controller.reset(),
             Self::Recovery(controller) => controller.reset(),
             Self::AdaptiveSupervisor(controller) => controller.reset(),
+        }
+    }
+
+    pub fn set_player_input(&mut self, input: PlayerInput) {
+        if let Self::Player(controller) = self {
+            controller.input = input;
+        }
+    }
+
+    pub fn set_assist_level(&mut self, level: AssistLevel) {
+        if let Self::Player(controller) = self {
+            controller.assist_level = level;
         }
     }
 
@@ -55,10 +71,146 @@ impl ControllerState {
         scenario: &ScenarioConfig,
     ) -> ControllerOutput {
         match self {
+            Self::Player(controller) => controller.update(dt, frame, scenario),
             Self::Stabilize(controller) => controller.update(dt, frame, scenario),
             Self::WaypointFollow(controller) => controller.update(dt, frame, scenario),
             Self::Recovery(controller) => controller.update(dt, frame, scenario),
             Self::AdaptiveSupervisor(controller) => controller.update(dt, frame, scenario),
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct PlayerController {
+    pub input: PlayerInput,
+    pub assist_level: AssistLevel,
+    hold_altitude: f64,
+}
+
+impl PlayerController {
+    fn reset(&mut self) {
+        self.input = PlayerInput::default();
+        self.hold_altitude = 0.0;
+    }
+
+    fn update(
+        &mut self,
+        _dt: f64,
+        frame: &NativeFrame,
+        _scenario: &ScenarioConfig,
+    ) -> ControllerOutput {
+        let input = self.input;
+
+        match self.assist_level {
+            AssistLevel::Manual => {
+                // Raw input maps directly to rotor mixer
+                let thrust = clamp(HOVER_THROTTLE + input.throttle * 0.38, 0.0, 1.0);
+                let roll_cmd = clamp(input.roll * 0.18, -0.18, 0.18);
+                let pitch_cmd = clamp(input.pitch * 0.18, -0.18, 0.18);
+                let yaw_cmd = clamp(input.yaw * 0.12, -0.18, 0.18);
+
+                ControllerOutput {
+                    rotor_command: mix_rotors(thrust, roll_cmd, pitch_cmd, yaw_cmd),
+                    status_text: format!(
+                        "Player Manual | HP {:.0}% | alt {:.1}m",
+                        frame.drone.health * 100.0,
+                        frame.drone.position.z
+                    ),
+                    active_waypoint_index: None,
+                    recovery_event: false,
+                }
+            }
+            AssistLevel::Stabilized => {
+                // Player sets desired lean angle; PD inner loop achieves it
+                let target_pitch = input.pitch * 0.40;
+                let target_roll = input.roll * 0.40;
+                let target_yaw_rate = input.yaw * 1.2;
+                let thrust = clamp(HOVER_THROTTLE + input.throttle * 0.38, 0.0, 1.0);
+
+                let roll = attitude_hold(
+                    target_roll,
+                    frame.drone.euler.x,
+                    frame.drone.angular_velocity.x,
+                    0.20,
+                );
+                let pitch = attitude_hold(
+                    target_pitch,
+                    frame.drone.euler.y,
+                    frame.drone.angular_velocity.y,
+                    0.20,
+                );
+                // Yaw: rate control — target_yaw_rate is desired angular velocity
+                let yaw = clamp(
+                    (target_yaw_rate - frame.drone.angular_velocity.z) * 0.10
+                        - frame.drone.angular_velocity.z * 0.02,
+                    -0.18,
+                    0.18,
+                );
+
+                ControllerOutput {
+                    rotor_command: mix_rotors(thrust, roll, pitch, yaw),
+                    status_text: format!(
+                        "Player Stabilized | HP {:.0}% | alt {:.1}m",
+                        frame.drone.health * 100.0,
+                        frame.drone.position.z
+                    ),
+                    active_waypoint_index: None,
+                    recovery_event: false,
+                }
+            }
+            AssistLevel::CruiseAssist => {
+                // Like Stabilized + altitude hold when throttle is neutral
+                let target_pitch = input.pitch * 0.40;
+                let target_roll = input.roll * 0.40;
+                let target_yaw_rate = input.yaw * 1.2;
+
+                let throttle_deadzone = input.throttle.abs() < 0.05;
+                let thrust = if throttle_deadzone {
+                    // Update and maintain hold altitude
+                    if self.hold_altitude < 0.5 {
+                        self.hold_altitude = frame.drone.position.z;
+                    }
+                    altitude_hold(
+                        self.hold_altitude,
+                        frame.drone.position.z,
+                        frame.drone.velocity.z,
+                        0.25,
+                    )
+                } else {
+                    self.hold_altitude = 0.0; // release hold
+                    clamp(HOVER_THROTTLE + input.throttle * 0.38, 0.0, 1.0)
+                };
+
+                let roll = attitude_hold(
+                    target_roll,
+                    frame.drone.euler.x,
+                    frame.drone.angular_velocity.x,
+                    0.20,
+                );
+                let pitch = attitude_hold(
+                    target_pitch,
+                    frame.drone.euler.y,
+                    frame.drone.angular_velocity.y,
+                    0.20,
+                );
+                let yaw = clamp(
+                    (target_yaw_rate - frame.drone.angular_velocity.z) * 0.10
+                        - frame.drone.angular_velocity.z * 0.02,
+                    -0.18,
+                    0.18,
+                );
+
+                ControllerOutput {
+                    rotor_command: mix_rotors(thrust, roll, pitch, yaw),
+                    status_text: format!(
+                        "Player Cruise | HP {:.0}% | alt {:.1}m",
+                        frame.drone.health * 100.0,
+                        frame.drone.position.z
+                    ),
+                    active_waypoint_index: None,
+                    recovery_event: false,
+                }
+            }
         }
     }
 }

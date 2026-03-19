@@ -378,7 +378,7 @@ export function ProceduralCity() {
     [atlasTexture]
   );
 
-  // Ground material
+  // Ground material — use average standard road width since variable roads
   const groundMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -386,7 +386,7 @@ export function ProceduralCity() {
         fragmentShader: groundFragmentShader,
         uniforms: {
           uBlockSize: { value: cityData.blockSize },
-          uRoadWidth: { value: cityData.roadWidth },
+          uRoadWidth: { value: 14.0 },
         },
       }),
     [cityData]
@@ -394,13 +394,13 @@ export function ProceduralCity() {
 
   return (
     <group>
-      {/* Ground plane */}
+      {/* Ground plane — covers 4km city */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.05, 0]}
         material={groundMaterial}
       >
-        <planeGeometry args={[800, 800, 1, 1]} />
+        <planeGeometry args={[4200, 4200, 1, 1]} />
       </mesh>
 
       {/* Buildings — single draw call via InstancedMesh */}

@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use gust_app_core::SimulationService;
-use gust_types::{ControllerMode, EvaluationReport, RunState, ScenarioSummary, SimulationSnapshot};
+use gust_types::{
+    AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioSummary,
+    SimulationSnapshot,
+};
 
 #[tauri::command]
 fn get_snapshot(
@@ -48,6 +51,34 @@ fn activate_scenario(
 }
 
 #[tauri::command]
+fn set_player_input(
+    input: PlayerInput,
+    service: tauri::State<'_, SimulationService>,
+) -> Result<(), String> {
+    service.set_player_input(input);
+    Ok(())
+}
+
+#[tauri::command]
+fn take_damage(
+    amount: f64,
+    service: tauri::State<'_, SimulationService>,
+) -> Result<(), String> {
+    service.take_damage(amount);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_assist_level(
+    level: AssistLevel,
+    service: tauri::State<'_, SimulationService>,
+) -> Result<SimulationSnapshot, String> {
+    service
+        .set_assist_level(level)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn run_quick_evaluation(
     service: tauri::State<'_, SimulationService>,
 ) -> Result<EvaluationReport, String> {
@@ -68,8 +99,17 @@ fn main() {
             set_run_state,
             set_controller_mode,
             activate_scenario,
+            set_player_input,
+            take_damage,
+            set_assist_level,
             run_quick_evaluation
         ])
+        .setup(|app| {
+            // Create default native menu (macOS: Cmd+Q quit, Cmd+C/V copy/paste, etc.)
+            let menu = tauri::menu::Menu::default(app.handle())?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("failed to run Gust desktop app");
 }

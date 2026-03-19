@@ -24,7 +24,7 @@ export default function App() {
   const activateScenario = useSimulationStore((s) => s.activateScenario);
   const runEvaluation = useSimulationStore((s) => s.runEvaluation);
 
-  const [cameraMode, setCameraMode] = useState<'orbit' | 'follow' | 'topdown'>('orbit');
+  const [cameraMode, setCameraMode] = useState<'orbit' | 'follow' | 'topdown'>('follow');
   const deferredSnapshot = useDeferredValue(snapshot);
 
   return (

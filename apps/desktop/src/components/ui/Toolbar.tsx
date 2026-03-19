@@ -5,6 +5,7 @@
 import type { ControllerMode, RunState, SimulationSnapshot } from '../../lib/types';
 
 const controllerOptions: Array<{ value: ControllerMode; label: string }> = [
+  { value: 'player', label: '🎮 Player Control' },
   { value: 'adaptive_supervisor', label: 'Adaptive Supervisor' },
   { value: 'waypoint_follow', label: 'Waypoint Follow' },
   { value: 'stabilize', label: 'Stabilize' },
@@ -83,7 +84,7 @@ export function Toolbar({
         <label className="toolbar-label">Controller</label>
         <select
           className="toolbar-select"
-          value={snapshot?.controllerMode ?? 'adaptive_supervisor'}
+          value={snapshot?.controllerMode ?? 'player'}
           onChange={(e) => onControllerChange(e.target.value as ControllerMode)}
         >
           {controllerOptions.map((opt) => (

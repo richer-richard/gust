@@ -1,9 +1,12 @@
 export type RunState = "stopped" | "running" | "paused";
 export type ControllerMode =
+  | "player"
   | "stabilize"
   | "waypoint_follow"
   | "recovery"
   | "adaptive_supervisor";
+
+export type AssistLevel = "manual" | "stabilized" | "cruise_assist";
 
 export interface Vec3 {
   x: number;
@@ -48,6 +51,7 @@ export interface DroneTelemetry {
   collision: boolean;
   closestObstacleDistance: number;
   recoveryMargin: number;
+  health: number;
 }
 
 export interface SensorTelemetry {
@@ -97,3 +101,9 @@ export interface EvaluationReport {
   metrics: EvaluationMetric[];
 }
 
+export interface PlayerInput {
+  pitch: number;
+  roll: number;
+  yaw: number;
+  throttle: number;
+}

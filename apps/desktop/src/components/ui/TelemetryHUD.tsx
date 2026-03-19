@@ -42,6 +42,24 @@ export function TelemetryHUD({ snapshot }: TelemetryHUDProps) {
         </div>
       )}
 
+      {/* Health bar */}
+      <div className="hud-health-bar-container" style={{ padding: '4px 8px' }}>
+        <div className="hud-section-label" style={{ marginBottom: 2 }}>
+          HEALTH {d ? `${(d.health * 100).toFixed(0)}%` : '--'}
+        </div>
+        <div style={{
+          height: 8, borderRadius: 4, background: '#1a1a24',
+          overflow: 'hidden', border: '1px solid #333',
+        }}>
+          <div style={{
+            height: '100%', borderRadius: 4, transition: 'width 0.2s',
+            width: `${(d?.health ?? 1) * 100}%`,
+            background: (d?.health ?? 1) > 0.5 ? '#4caf50' :
+              (d?.health ?? 1) > 0.2 ? '#ff9800' : '#f44336',
+          }} />
+        </div>
+      </div>
+
       <div className="hud-grid">
         <HudMetric
           label="ALT"
@@ -142,7 +160,7 @@ export function TelemetryHUD({ snapshot }: TelemetryHUDProps) {
             <div className="hud-rotor-bar-bg">
               <div
                 className="hud-rotor-bar"
-                style={{ width: `${Math.min(100, (rpm / 6400) * 100)}%` }}
+                style={{ width: `${Math.min(100, (rpm / 10000) * 100)}%` }}
               />
             </div>
             <div className="hud-rotor-val">{rpm.toFixed(0)}</div>
