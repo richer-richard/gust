@@ -122,9 +122,19 @@ pub enum ControllerMode {
 #[serde(rename_all = "snake_case")]
 pub enum AssistLevel {
     Manual,
-    #[default]
     Stabilized,
     CruiseAssist,
+    #[default]
+    IntentAssist,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlightPhase {
+    #[default]
+    IdleOnPad,
+    Arming,
+    Airborne,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -141,6 +151,9 @@ pub struct PlayerInput {
 pub struct SimulationSnapshot {
     pub run_state: RunState,
     pub controller_mode: ControllerMode,
+    pub assist_level: Option<AssistLevel>,
+    pub flight_phase: FlightPhase,
+    pub motors_armed: bool,
     pub tick: u64,
     pub sim_time_s: f64,
     pub status_text: String,

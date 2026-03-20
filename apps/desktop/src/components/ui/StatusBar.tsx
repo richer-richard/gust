@@ -20,6 +20,15 @@ export function StatusBar({ snapshot }: StatusBarProps) {
           <span className="status-label">Controller</span>
           <span className="status-value">{formatController(snapshot?.controllerMode)}</span>
         </span>
+        {snapshot?.controllerMode === 'player' && (
+          <>
+            <span className="status-bar-divider">│</span>
+            <span className="status-bar-item">
+              <span className="status-label">Assist</span>
+              <span className="status-value">{formatAssist(snapshot?.assistLevel)}</span>
+            </span>
+          </>
+        )}
         <span className="status-bar-divider">│</span>
         <span className="status-bar-item">
           <span className="status-label">Status</span>
@@ -37,6 +46,12 @@ export function StatusBar({ snapshot }: StatusBarProps) {
           <span className="status-label">Tick</span>
           <span className="status-value">{snapshot?.tick ?? 0}</span>
         </span>
+        {snapshot?.controllerMode === 'player' && (
+          <span className="status-bar-item mono">
+            <span className="status-label">Flight</span>
+            <span className="status-value">{formatFlightPhase(snapshot?.flightPhase)}</span>
+          </span>
+        )}
         <span className="status-bar-item mono">
           <span className="status-label">Collision</span>
           <span className={`status-value ${snapshot?.drone.collision ? 'warn' : ''}`}>
@@ -50,9 +65,28 @@ export function StatusBar({ snapshot }: StatusBarProps) {
 
 function formatController(mode?: string | null): string {
   switch (mode) {
+    case 'player': return 'Player Control';
     case 'adaptive_supervisor': return 'Adaptive Supervisor';
     case 'waypoint_follow': return 'Waypoint Follow';
     case 'recovery': return 'Recovery';
     default: return 'Stabilize';
+  }
+}
+
+function formatAssist(assistLevel?: string | null): string {
+  switch (assistLevel) {
+    case 'intent_assist': return 'Intent Assist';
+    case 'stabilized': return 'Stabilized';
+    case 'cruise_assist': return 'Cruise Assist';
+    case 'manual': return 'Manual';
+    default: return 'Intent Assist';
+  }
+}
+
+function formatFlightPhase(flightPhase?: string | null): string {
+  switch (flightPhase) {
+    case 'arming': return 'Arming';
+    case 'airborne': return 'Airborne';
+    default: return 'On Pad';
   }
 }

@@ -1,0 +1,74 @@
+{
+  "id": "city_flyover",
+  "name": "City Flyover",
+  "description": "Free-flight tour from the central plaza with long daytime visibility, light wind, and a scenic waypoint loop for evaluation.",
+  "baseWind": { "x": 0.8, "y": 0.2, "z": 0.0 },
+  "gustAmplitude": 0.9,
+  "gustCellSize": 22.0,
+  "durationS": 60.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.0,
+    "imuNoiseScale": 0.05
+  },
+  "obstacles": [
+    {
+      "center": { "x": 240.0, "y": 80.0, "z": 120.0 },
+      "size": { "x": 34.0, "y": 30.0, "z": 240.0 }
+    },
+    {
+      "center": { "x": -250.0, "y": -120.0, "z": 140.0 },
+      "size": { "x": 38.0, "y": 32.0, "z": 280.0 }
+    },
+    {
+      "center": { "x": 110.0, "y": -265.0, "z": 110.0 },
+      "size": { "x": 32.0, "y": 32.0, "z": 220.0 }
+    },
+    {
+      "center": { "x": -120.0, "y": 285.0, "z": 125.0 },
+      "size": { "x": 34.0, "y": 30.0, "z": 250.0 }
+    },
+    {
+      "center": { "x": 330.0, "y": -180.0, "z": 100.0 },
+      "size": { "x": 28.0, "y": 26.0, "z": 200.0 }
+    },
+    {
+      "center": { "x": -345.0, "y": 140.0, "z": 110.0 },
+      "size": { "x": 30.0, "y": 28.0, "z": 220.0 }
+    },
+    {
+      "center": { "x": 60.0, "y": 370.0, "z": 90.0 },
+      "size": { "x": 26.0, "y": 24.0, "z": 180.0 }
+    },
+    {
+      "center": { "x": -70.0, "y": -385.0, "z": 95.0 },
+      "size": { "x": 28.0, "y": 24.0, "z": 190.0 }
+    }
+  ],
+  "waypoints": [
+    {
+      "position": { "x": 0.0, "y": 0.0, "z": 8.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": 85.0, "y": -20.0, "z": 24.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 130.0, "y": 35.0, "z": 28.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 25.0, "y": 105.0, "z": 22.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -70.0, "y": 30.0, "z": 18.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": 0.0, "y": 0.0, "z": 10.0 },
+      "holdS": 1.5
+    }
+  ]
+}

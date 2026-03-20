@@ -1,19 +1,19 @@
-/**
- * Gust - Drone Autopilot Simulation
- * Main application component with full-screen 3D viewport and floating UI panels.
- */
-import { useState, useDeferredValue } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { CityScene } from './components/scene/CityScene';
 import { Toolbar } from './components/ui/Toolbar';
 import { TelemetryHUD } from './components/ui/TelemetryHUD';
 import { ControlPanel } from './components/ui/ControlPanel';
 import { StatusBar } from './components/ui/StatusBar';
+import { LandingOverlay } from './components/ui/LandingOverlay';
+import { CameraRecoveryInset } from './components/ui/CameraRecoveryInset';
 import { useSimulation } from './hooks/useSimulation';
 import { useSimulationStore } from './lib/store';
+import { SCENE_THEME_BY_ID, THEME_OPTIONS, type ThemeId } from './lib/theme';
+import type { AssistLevel } from './lib/types';
+
+type SessionStage = 'landing' | 'launching' | 'active';
 
 export default function App() {
-  useSimulation();
-
   const snapshot = useSimulationStore((s) => s.snapshot);
   const scenarios = useSimulationStore((s) => s.scenarios);
   const evaluation = useSimulationStore((s) => s.evaluation);
@@ -21,48 +21,162 @@ export default function App() {
   const error = useSimulationStore((s) => s.error);
   const setRunState = useSimulationStore((s) => s.setRunState);
   const setControllerMode = useSimulationStore((s) => s.setControllerMode);
+  const setAssistLevel = useSimulationStore((s) => s.setAssistLevel);
   const activateScenario = useSimulationStore((s) => s.activateScenario);
   const runEvaluation = useSimulationStore((s) => s.runEvaluation);
 
+  const [sessionStage, setSessionStage] = useState<SessionStage>('landing');
+  const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('sunny');
   const [cameraMode, setCameraMode] = useState<'orbit' | 'follow' | 'topdown'>('follow');
+  const [recenterSignal, setRecenterSignal] = useState(0);
+  const [droneFramingLost, setDroneFramingLost] = useState(false);
+
+  const playerControlsEnabled =
+    sessionStage === 'active' &&
+    snapshot?.controllerMode === 'player' &&
+    snapshot.runState !== 'stopped';
+  useSimulation(playerControlsEnabled);
+
   const deferredSnapshot = useDeferredValue(snapshot);
+  const theme = useMemo(() => SCENE_THEME_BY_ID[selectedThemeId], [selectedThemeId]);
+  const assistLevel = (snapshot?.assistLevel ?? 'intent_assist') as AssistLevel;
+  const sessionIsActive = sessionStage === 'active';
+  const showScenarioVisuals = sessionIsActive && snapshot?.activeScenarioId !== 'city_flyover';
+
+  const recenterCamera = () => {
+    setCameraMode('follow');
+    setDroneFramingLost(false);
+    setRecenterSignal((signal) => signal + 1);
+  };
+
+  const launchFlyover = async () => {
+    setSessionStage('launching');
+    setDroneFramingLost(false);
+    setCameraMode('follow');
+    setRecenterSignal((signal) => signal + 1);
+
+    try {
+      await setRunState('stopped');
+      await activateScenario('city_flyover');
+      await setControllerMode('player');
+      await setAssistLevel('intent_assist');
+      await setRunState('running');
+      setSessionStage('active');
+    } catch {
+      setSessionStage('landing');
+    }
+  };
+
+  const returnToLanding = async () => {
+    setSessionStage('launching');
+    setDroneFramingLost(false);
+
+    try {
+      await setRunState('stopped');
+      await activateScenario('city_flyover');
+      await setControllerMode('player');
+      await setAssistLevel('intent_assist');
+      setCameraMode('follow');
+      setRecenterSignal((signal) => signal + 1);
+      setSessionStage('landing');
+    } catch {
+      setSessionStage('landing');
+    }
+  };
 
   return (
     <div className="app-shell">
-      {/* Full-screen 3D viewport */}
       <div className="viewport-container">
-        <CityScene snapshot={deferredSnapshot} cameraMode={cameraMode} />
+        {snapshot ? (
+          <CityScene
+            snapshot={deferredSnapshot}
+            cameraMode={cameraMode}
+            theme={theme}
+            previewMode={!sessionIsActive}
+            showScenarioVisuals={showScenarioVisuals}
+            recenterSignal={recenterSignal}
+            onDroneFramingChange={sessionIsActive ? setDroneFramingLost : undefined}
+          />
+        ) : null}
       </div>
 
-      {/* UI overlay on top of viewport */}
       <div className="overlay">
-        {/* Top toolbar */}
-        <Toolbar
-          snapshot={snapshot}
-          onRunStateChange={(s) => void setRunState(s)}
-          onControllerChange={(m) => void setControllerMode(m)}
-          cameraMode={cameraMode}
-          onCameraModeChange={setCameraMode}
-        />
-
-        {/* Error banner */}
         {error && <div className="error-banner">{error}</div>}
 
-        {/* Main body: telemetry left, control right */}
-        <div className="overlay-body">
-          <TelemetryHUD snapshot={snapshot} />
-          <ControlPanel
-            snapshot={snapshot}
-            scenarios={scenarios}
-            evaluation={evaluation}
-            isEvaluating={isEvaluating}
-            onSelectScenario={(id) => void activateScenario(id)}
-            onRunEvaluation={() => void runEvaluation()}
-          />
-        </div>
+        {!snapshot && (
+          <div className="loading-overlay">
+            <div className="loading-logo">GUST</div>
+            <div className="loading-text">Booting the flyover scene</div>
+            <div className="loading-bar">
+              <div className="loading-bar-fill" />
+            </div>
+          </div>
+        )}
 
-        {/* Bottom status bar */}
-        <StatusBar snapshot={snapshot} />
+        {snapshot && sessionStage === 'landing' && (
+          <LandingOverlay
+            selectedThemeId={selectedThemeId}
+            themeOptions={THEME_OPTIONS}
+            onSelectTheme={setSelectedThemeId}
+            onStart={launchFlyover}
+            isLaunching={false}
+          />
+        )}
+
+        {sessionIsActive && snapshot && (
+          <>
+            <Toolbar
+              snapshot={snapshot}
+              onRunStateChange={(s) => void setRunState(s)}
+              onControllerChange={(m) => void setControllerMode(m)}
+              sessionModeLabel="Flyover"
+              themeLabel={theme.name}
+              cameraMode={cameraMode}
+              onCameraModeChange={setCameraMode}
+              onReturnHome={() => void returnToLanding()}
+            />
+
+            <div className="overlay-body">
+              <TelemetryHUD snapshot={snapshot} />
+              <ControlPanel
+                snapshot={snapshot}
+                scenarios={scenarios}
+                evaluation={evaluation}
+                isEvaluating={isEvaluating}
+                sessionModeLabel="Flyover"
+                themeLabel={theme.name}
+                assistLevel={assistLevel}
+                onSelectScenario={(id) => void activateScenario(id)}
+                onAssistLevelChange={(level) => void setAssistLevel(level)}
+                onRunEvaluation={() => void runEvaluation()}
+                onRecenterCamera={recenterCamera}
+                onReturnHome={() => void returnToLanding()}
+              />
+            </div>
+
+            <StatusBar snapshot={snapshot} />
+          </>
+        )}
+
+        {snapshot && sessionIsActive && droneFramingLost && cameraMode !== 'topdown' && (
+          <CameraRecoveryInset
+            snapshot={snapshot}
+            theme={theme}
+            onClick={recenterCamera}
+          />
+        )}
+
+        {sessionStage === 'launching' && (
+          <div className="loading-overlay loading-overlay-session">
+            <div className="loading-logo">GUST</div>
+            <div className="loading-text">
+              Preparing {theme.name} flyover and plaza takeoff
+            </div>
+            <div className="loading-bar">
+              <div className="loading-bar-fill" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -142,15 +142,15 @@ void Simulator::reset(Scenario scenario) {
   scenario_ = std::move(scenario);
   tick_ = 0;
   sim_time_s_ = 0.0;
-  position_ = {0.0, 0.0, 30.0};
+  position_ = {0.0, 0.0, 0.0};
   velocity_ = {};
   euler_ = {};
   angular_velocity_ = {};
   last_world_accel_ = {};
   last_gps_position_ = position_;
   current_wind_ = scenario_.base_wind;
-  rotor_command_ = {0.615, 0.615, 0.615, 0.615};
-  rotor_rpm_ = {5200.0, 5200.0, 5200.0, 5200.0};
+  rotor_command_ = {0.0, 0.0, 0.0, 0.0};
+  rotor_rpm_ = {0.0, 0.0, 0.0, 0.0};
   collision_ = false;
   closest_obstacle_distance_ = 50.0;
   recovery_margin_ = 1.0;
@@ -202,8 +202,13 @@ void Simulator::step(double dt) {
     const auto cmd = std::clamp(rotor_command_[i] * health_cap, 0.0, 1.0);
     thrust[i] = cmd * kMaxThrustPerRotorN;
     total_thrust += thrust[i];
-    rotor_rpm_[i] = 2400.0 + std::sqrt(cmd) * (kMaxRpm - 2400.0);
+    rotor_rpm_[i] = cmd < 1e-4 ? 0.0 : 2400.0 + std::sqrt(cmd) * (kMaxRpm - 2400.0);
   }
+
+  const bool grounded_idle =
+      position_.z <= 0.02 &&
+      total_thrust < (kMassKg * kGravity * 0.95) &&
+      velocity_.z <= 0.25;
 
   Vec3 torque{
       kArmLengthM * ((thrust[1] + thrust[2]) - (thrust[0] + thrust[3])) * 0.5,
@@ -229,6 +234,18 @@ void Simulator::step(double dt) {
   const auto air_relative = current_wind_ - velocity_;
   const auto drag_accel = air_relative * (kLinearDrag / kMassKg);
   const auto world_accel = gravity + (thrust_world / kMassKg) + drag_accel;
+
+  if (grounded_idle) {
+    velocity_.x *= 0.72;
+    velocity_.y *= 0.72;
+    velocity_.z = 0.0;
+    position_.z = 0.0;
+    angular_velocity_ *= 0.72;
+    last_world_accel_ = {};
+    resolve_collisions();
+    update_recovery_margin();
+    return;
+  }
 
   velocity_ += world_accel * dt;
   position_ += velocity_ * dt;
@@ -374,4 +391,3 @@ void Simulator::take_damage(double amount) {
 }
 
 }  // namespace gust::sim
-

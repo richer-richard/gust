@@ -2,12 +2,11 @@ import { useEffect } from "react";
 import { useSimulationStore } from "../lib/store";
 import { useKeyboardControls } from "./useKeyboardControls";
 
-export function useSimulation() {
+export function useSimulation(playerControlsEnabled: boolean) {
   const bootstrap = useSimulationStore((state) => state.bootstrap);
   const refreshSnapshot = useSimulationStore((state) => state.refreshSnapshot);
 
-  // Activate player keyboard controls
-  useKeyboardControls();
+  useKeyboardControls(playerControlsEnabled);
 
   useEffect(() => {
     void bootstrap();

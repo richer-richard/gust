@@ -4,18 +4,23 @@
  */
 import { EffectComposer, Bloom, Vignette, ToneMapping } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
+import type { SceneTheme } from '../../lib/theme';
 
-export function PostEffects() {
+interface PostEffectsProps {
+  theme: SceneTheme;
+}
+
+export function PostEffects({ theme }: PostEffectsProps) {
   return (
     <EffectComposer multisampling={0}>
       <Bloom
-        intensity={0.4}
+        intensity={theme.post.bloomIntensity}
         luminanceThreshold={0.6}
         luminanceSmoothing={0.3}
         mipmapBlur
       />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <Vignette eskil={false} offset={0.25} darkness={0.6} />
+      <Vignette eskil={false} offset={0.22} darkness={theme.post.vignetteDarkness} />
     </EffectComposer>
   );
 }

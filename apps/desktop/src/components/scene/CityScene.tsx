@@ -1,27 +1,40 @@
 /**
- * CityScene - Main 3D viewport combining all scene elements.
- * Full-screen Canvas with chase camera, city, drone, enemy drones, effects.
+ * CityScene - Main 3D viewport with theme-aware world rendering and hybrid follow camera.
  */
-import { Suspense, useRef, useCallback, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { ProceduralCity } from './ProceduralCity';
 import { DroneModel } from './DroneModel';
-import { EnemyDroneModel } from './EnemyDroneModel';
 import { SkyAndEnvironment, CloudLayer } from './SkyAndEnvironment';
 import { WindParticles } from './WindParticles';
 import { WaypointMarkers } from './WaypointMarkers';
 import { PostEffects } from './PostEffects';
-import { useEnemyDrones, type EnemyDrone } from '../../hooks/useEnemyDrones';
+import type { SceneTheme } from '../../lib/theme';
 import type { SimulationSnapshot } from '../../lib/types';
 
 interface CitySceneProps {
   snapshot: SimulationSnapshot | null;
   cameraMode: 'orbit' | 'follow' | 'topdown';
+  theme: SceneTheme;
+  previewMode?: boolean;
+  showScenarioVisuals?: boolean;
+  interactiveCamera?: boolean;
+  recenterSignal?: number;
+  onDroneFramingChange?: (lost: boolean) => void;
 }
 
-export function CityScene({ snapshot, cameraMode }: CitySceneProps) {
+export function CityScene({
+  snapshot,
+  cameraMode,
+  theme,
+  previewMode = false,
+  showScenarioVisuals = true,
+  interactiveCamera = true,
+  recenterSignal = 0,
+  onDroneFramingChange,
+}: CitySceneProps) {
   return (
     <Canvas
       shadows
@@ -35,202 +48,231 @@ export function CityScene({ snapshot, cameraMode }: CitySceneProps) {
       camera={{
         fov: 55,
         near: 0.1,
-        far: 6000,
-        position: [0, 40, 28],
+        far: 9000,
+        position: [70, 52, 96],
       }}
       style={{ width: '100%', height: '100%' }}
     >
       <Suspense fallback={null}>
-        <SkyAndEnvironment />
-        <CloudLayer />
-        <ProceduralCity />
+        <SkyAndEnvironment theme={theme} />
+        <CloudLayer theme={theme} />
+        <ProceduralCity theme={theme} />
         <DroneModel snapshot={snapshot} />
-        <EnemyDroneLayer snapshot={snapshot} />
         <WindParticles snapshot={snapshot} />
-        <WaypointMarkers snapshot={snapshot} />
-        <CameraController snapshot={snapshot} mode={cameraMode} />
-        <PostEffects />
+        {showScenarioVisuals && <WaypointMarkers snapshot={snapshot} />}
+        <CameraController
+          snapshot={snapshot}
+          mode={cameraMode}
+          previewMode={previewMode}
+          interactiveCamera={interactiveCamera}
+          recenterSignal={recenterSignal}
+          onDroneFramingChange={onDroneFramingChange}
+        />
+        <PostEffects theme={theme} />
       </Suspense>
     </Canvas>
   );
 }
 
-/**
- * EnemyDroneLayer — Manages and renders enemy drones using the useEnemyDrones hook.
- */
-function EnemyDroneLayer({ snapshot }: { snapshot: SimulationSnapshot | null }) {
-  const enemies = useEnemyDrones(snapshot);
-
-  return (
-    <>
-      {enemies.map((enemy: EnemyDrone) => (
-        <EnemyDroneModel key={enemy.id} enemy={enemy} />
-      ))}
-    </>
-  );
-}
-
-/**
- * CameraController - Manages camera behavior based on selected mode.
- * - orbit: free OrbitControls targeting drone
- * - follow: chase camera behind drone with camera shake
- * - topdown: bird's eye view
- */
 function CameraController({
   snapshot,
   mode,
+  previewMode,
+  interactiveCamera,
+  recenterSignal,
+  onDroneFramingChange,
 }: {
   snapshot: SimulationSnapshot | null;
   mode: 'orbit' | 'follow' | 'topdown';
+  previewMode: boolean;
+  interactiveCamera: boolean;
+  recenterSignal: number;
+  onDroneFramingChange?: (lost: boolean) => void;
 }) {
-  const dronePos = snapshot?.drone.position ?? { x: 0, y: 0, z: 0.5 };
-  const targetX = dronePos.x;
-  const targetY = dronePos.z;
-  const targetZ = -dronePos.y;
+  const dronePos = snapshot?.drone.position ?? { x: 0, y: 0, z: 0.2 };
+  const target = useMemo(
+    () => new THREE.Vector3(dronePos.x, dronePos.z + 1.4, -dronePos.y),
+    [dronePos.x, dronePos.y, dronePos.z]
+  );
 
-  if (mode === 'orbit') {
-    return (
-      <OrbitControls
-        target={[targetX, targetY, targetZ]}
-        enablePan
-        enableRotate
-        enableZoom
-        maxDistance={2000}
-        minDistance={2}
-        maxPolarAngle={Math.PI * 0.85}
-      />
-    );
+  if (previewMode) {
+    return <LandingPreviewCamera target={target} onDroneFramingChange={onDroneFramingChange} />;
   }
 
-  if (mode === 'follow') {
-    return (
-      <FollowCamera
-        targetX={targetX}
-        targetY={targetY}
-        targetZ={targetZ}
-        euler={snapshot?.drone.euler ?? { x: 0, y: 0, z: 0 }}
-        collision={snapshot?.drone.collision ?? false}
-        health={snapshot?.drone.health ?? 1}
-      />
-    );
+  if (mode === 'topdown') {
+    return <TopDownCamera target={target} onDroneFramingChange={onDroneFramingChange} />;
   }
 
-  return <TopDownCamera targetX={targetX} targetY={targetY} targetZ={targetZ} />;
+  return (
+    <HybridFollowCamera
+      target={target}
+      yaw={-(snapshot?.drone.euler.z ?? 0)}
+      collision={snapshot?.drone.collision ?? false}
+      mode={mode}
+      interactive={interactiveCamera}
+      recenterSignal={recenterSignal}
+      onDroneFramingChange={onDroneFramingChange}
+    />
+  );
 }
 
-/**
- * FollowCamera - Cinematic chase camera behind and above the drone.
- *
- * Uses dual-layer smoothing to prevent wobble/vibration:
- *   Layer 1: The drone's raw position is smoothed into a "target" position,
- *            filtering out micro-oscillations from physics/wind.
- *   Layer 2: The camera itself follows the smoothed target with a very soft
- *            lerp, creating a gentle cinematic lag.
- *
- * Inspired by git-city's flyover camera — the key insight is that hard-locked
- * cameras amplify every physics tick into visible jitter. By allowing deviation
- * and pulling back softly, the view stays clear and coherent.
- */
-function FollowCamera({
-  targetX,
-  targetY,
-  targetZ,
-  euler,
-  collision,
-  health,
+function LandingPreviewCamera({
+  target,
+  onDroneFramingChange,
 }: {
-  targetX: number;
-  targetY: number;
-  targetZ: number;
-  euler: { x: number; y: number; z: number };
-  collision: boolean;
-  health: number;
+  target: THREE.Vector3;
+  onDroneFramingChange?: (lost: boolean) => void;
 }) {
-  // Smoothed drone position (filters physics micro-oscillations)
-  const smoothedTarget = useRef(new THREE.Vector3(targetX, targetY, targetZ));
-  // Smoothed yaw to prevent camera swinging on angular jitter
-  const smoothedYaw = useRef(-euler.z);
-  const shakeRef = useRef(0);
-  const initialized = useRef(false);
-
-  useFrame(({ camera }) => {
-    // ── Layer 1: Smooth the drone target position ──────────────
-    // Low factor = heavy smoothing, filters rapid oscillations
-    const TARGET_SMOOTH = 0.035;
-    smoothedTarget.current.x += (targetX - smoothedTarget.current.x) * TARGET_SMOOTH;
-    smoothedTarget.current.y += (targetY - smoothedTarget.current.y) * TARGET_SMOOTH;
-    smoothedTarget.current.z += (targetZ - smoothedTarget.current.z) * TARGET_SMOOTH;
-
-    // Smooth the yaw too — prevents camera from swinging on angular jitter
-    const rawYaw = -euler.z;
-    let yawDelta = rawYaw - smoothedYaw.current;
-    // Handle wrap-around
-    if (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
-    if (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
-    smoothedYaw.current += yawDelta * 0.03;
-
-    // ── Layer 2: Camera follows smoothed target softly ────────
-    const yaw = smoothedYaw.current;
-    const offsetDist = 28;  // Further back for cinematic feel
-    const offsetHeight = 10; // Higher up for better overview
-
-    const idealX = smoothedTarget.current.x - Math.cos(yaw) * offsetDist;
-    const idealY = smoothedTarget.current.y + offsetHeight;
-    const idealZ = smoothedTarget.current.z - Math.sin(yaw) * offsetDist;
-
-    if (!initialized.current) {
-      // Snap camera to ideal position on first frame (no lerp jank)
-      camera.position.set(idealX, idealY, idealZ);
-      initialized.current = true;
-    } else {
-      // Very soft position follow — allows deviation, pulls back gently
-      const CAM_SMOOTH = 0.018;
-      camera.position.x += (idealX - camera.position.x) * CAM_SMOOTH;
-      camera.position.y += (idealY - camera.position.y) * CAM_SMOOTH;
-      camera.position.z += (idealZ - camera.position.z) * CAM_SMOOTH;
-    }
-
-    // ── Camera shake on collision (gentle) ────────────────────
-    if (collision) {
-      shakeRef.current = Math.max(shakeRef.current, 0.5);
-    }
-    if (shakeRef.current > 0.005) {
-      const intensity = shakeRef.current * 0.25;
-      camera.position.x += (Math.random() - 0.5) * intensity;
-      camera.position.y += (Math.random() - 0.5) * intensity * 0.4;
-      camera.position.z += (Math.random() - 0.5) * intensity;
-      shakeRef.current *= 0.92;
-    }
-
-    // ── Look at smoothed target (not raw drone!) ──────────────
-    const lookAhead = 6;
-    const lookX = smoothedTarget.current.x + Math.cos(yaw) * lookAhead;
-    const lookZ = smoothedTarget.current.z + Math.sin(yaw) * lookAhead;
-    camera.lookAt(lookX, smoothedTarget.current.y, lookZ);
+  useFrame(({ camera, clock }) => {
+    const t = clock.elapsedTime * 0.08;
+    camera.position.set(Math.cos(t) * 210, 80, Math.sin(t) * 160);
+    camera.lookAt(target.x, 16, target.z);
+    onDroneFramingChange?.(false);
   });
 
   return null;
 }
 
-function TopDownCamera({
-  targetX,
-  targetY,
-  targetZ,
+function HybridFollowCamera({
+  target,
+  yaw,
+  collision,
+  mode,
+  interactive,
+  recenterSignal,
+  onDroneFramingChange,
 }: {
-  targetX: number;
-  targetY: number;
-  targetZ: number;
+  target: THREE.Vector3;
+  yaw: number;
+  collision: boolean;
+  mode: 'orbit' | 'follow';
+  interactive: boolean;
+  recenterSignal: number;
+  onDroneFramingChange?: (lost: boolean) => void;
+}) {
+  const controlsRef = useRef<any>(null);
+  const smoothedTarget = useRef(target.clone());
+  const desiredDefaultPos = useRef(new THREE.Vector3());
+  const lastManualInputAt = useRef(0);
+  const initialized = useRef(false);
+  const lastLostState = useRef(false);
+  const shakeRef = useRef(0);
+  const lastHandledRecenter = useRef(recenterSignal);
+
+  useEffect(() => {
+    if (!interactive) return;
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const markManualInput = () => {
+      lastManualInputAt.current = performance.now();
+    };
+
+    controls.addEventListener('start', markManualInput);
+    controls.addEventListener('change', markManualInput);
+
+    return () => {
+      controls.removeEventListener('start', markManualInput);
+      controls.removeEventListener('change', markManualInput);
+    };
+  }, [interactive]);
+
+  useFrame(({ camera }) => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    smoothedTarget.current.lerp(target, 0.1);
+    controls.target.lerp(smoothedTarget.current, 0.12);
+
+    const defaultDistance = mode === 'orbit' ? 46 : 34;
+    const defaultHeight = mode === 'orbit' ? 30 : 22;
+    desiredDefaultPos.current.set(
+      smoothedTarget.current.x - Math.cos(yaw) * defaultDistance,
+      smoothedTarget.current.y + defaultHeight,
+      smoothedTarget.current.z - Math.sin(yaw) * defaultDistance
+    );
+
+    if (!initialized.current) {
+      camera.position.copy(desiredDefaultPos.current);
+      controls.target.copy(smoothedTarget.current);
+      controls.update();
+      initialized.current = true;
+    }
+
+    const idleMs = performance.now() - lastManualInputAt.current;
+    if (mode === 'follow' && (lastManualInputAt.current === 0 || idleMs > 2600)) {
+      camera.position.lerp(desiredDefaultPos.current, 0.025);
+    }
+
+    if (collision) {
+      shakeRef.current = Math.max(shakeRef.current, 0.35);
+    }
+    if (shakeRef.current > 0.004) {
+      const intensity = shakeRef.current * 0.18;
+      camera.position.x += (Math.random() - 0.5) * intensity;
+      camera.position.y += (Math.random() - 0.5) * intensity * 0.35;
+      camera.position.z += (Math.random() - 0.5) * intensity;
+      shakeRef.current *= 0.92;
+    }
+
+    controls.update();
+
+    const projected = smoothedTarget.current.clone().project(camera);
+    const cameraDistance = camera.position.distanceTo(smoothedTarget.current);
+    const framingLost =
+      projected.z < -1 ||
+      projected.z > 1 ||
+      Math.abs(projected.x) > 0.82 ||
+      Math.abs(projected.y) > 0.82 ||
+      cameraDistance > 140;
+
+    if (framingLost !== lastLostState.current) {
+      lastLostState.current = framingLost;
+      onDroneFramingChange?.(framingLost);
+    }
+  });
+
+  useEffect(() => {
+    if (recenterSignal <= 0 || recenterSignal === lastHandledRecenter.current) return;
+    const controls = controlsRef.current;
+    if (!controls) return;
+    controls.reset();
+    lastHandledRecenter.current = recenterSignal;
+    lastManualInputAt.current = 0;
+    initialized.current = false;
+  }, [recenterSignal]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enabled={interactive}
+      enableDamping
+      dampingFactor={0.065}
+      enablePan={interactive && mode === 'orbit'}
+      enableZoom
+      enableRotate
+      minDistance={14}
+      maxDistance={420}
+      minPolarAngle={0.16}
+      maxPolarAngle={Math.PI * 0.98}
+    />
+  );
+}
+
+function TopDownCamera({
+  target,
+  onDroneFramingChange,
+}: {
+  target: THREE.Vector3;
+  onDroneFramingChange?: (lost: boolean) => void;
 }) {
   useFrame(({ camera }) => {
-    const idealX = targetX;
-    const idealY = targetY + 120;
-    const idealZ = targetZ;
-
-    camera.position.x += (idealX - camera.position.x) * 0.05;
-    camera.position.y += (idealY - camera.position.y) * 0.05;
-    camera.position.z += (idealZ - camera.position.z) * 0.05;
-
-    camera.lookAt(targetX, targetY, targetZ);
+    const idealY = target.y + 140;
+    camera.position.x += (target.x - camera.position.x) * 0.06;
+    camera.position.y += (idealY - camera.position.y) * 0.06;
+    camera.position.z += (target.z - camera.position.z) * 0.06;
+    camera.lookAt(target);
+    onDroneFramingChange?.(false);
   });
 
   return null;

@@ -4,10 +4,12 @@ import {
   getSnapshot,
   listScenarios,
   runQuickEvaluation,
+  setAssistLevel,
   setControllerMode,
   setRunState,
 } from "./tauri";
 import type {
+  AssistLevel,
   ControllerMode,
   EvaluationReport,
   RunState,
@@ -25,6 +27,7 @@ interface SimulationStore {
   refreshSnapshot: () => Promise<void>;
   setRunState: (runState: RunState) => Promise<void>;
   setControllerMode: (controllerMode: ControllerMode) => Promise<void>;
+  setAssistLevel: (assistLevel: AssistLevel) => Promise<void>;
   activateScenario: (scenarioId: string) => Promise<void>;
   runEvaluation: () => Promise<void>;
 }
@@ -70,6 +73,14 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       set({ error: stringifyError(error) });
     }
   },
+  async setAssistLevel(assistLevel) {
+    try {
+      const snapshot = await setAssistLevel(assistLevel);
+      set({ snapshot, error: null });
+    } catch (error) {
+      set({ error: stringifyError(error) });
+    }
+  },
   async activateScenario(scenarioId) {
     try {
       const snapshot = await activateScenario(scenarioId);
@@ -95,4 +106,3 @@ function stringifyError(error: unknown): string {
   }
   return "Unknown Tauri invocation error";
 }
-

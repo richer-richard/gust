@@ -6,7 +6,12 @@ export type ControllerMode =
   | "recovery"
   | "adaptive_supervisor";
 
-export type AssistLevel = "manual" | "stabilized" | "cruise_assist";
+export type AssistLevel =
+  | "manual"
+  | "stabilized"
+  | "cruise_assist"
+  | "intent_assist";
+export type FlightPhase = "idle_on_pad" | "arming" | "airborne";
 
 export interface Vec3 {
   x: number;
@@ -72,6 +77,9 @@ export interface EnvironmentTelemetry {
 export interface SimulationSnapshot {
   runState: RunState;
   controllerMode: ControllerMode;
+  assistLevel: AssistLevel | null;
+  flightPhase: FlightPhase;
+  motorsArmed: boolean;
   tick: number;
   simTimeS: number;
   statusText: string;

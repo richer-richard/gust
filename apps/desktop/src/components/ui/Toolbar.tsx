@@ -1,11 +1,11 @@
 /**
- * Toolbar - Top application bar with simulation controls, scenario/controller selection,
- * and camera mode toggle. Designed to feel like professional simulation software.
+ * Toolbar - Top application bar with simulation controls, session context, controller
+ * selection, and camera mode toggle.
  */
 import type { ControllerMode, RunState, SimulationSnapshot } from '../../lib/types';
 
 const controllerOptions: Array<{ value: ControllerMode; label: string }> = [
-  { value: 'player', label: '🎮 Player Control' },
+  { value: 'player', label: 'Player Control' },
   { value: 'adaptive_supervisor', label: 'Adaptive Supervisor' },
   { value: 'waypoint_follow', label: 'Waypoint Follow' },
   { value: 'stabilize', label: 'Stabilize' },
@@ -16,16 +16,22 @@ interface ToolbarProps {
   snapshot: SimulationSnapshot | null;
   onRunStateChange: (state: RunState) => void;
   onControllerChange: (mode: ControllerMode) => void;
+  sessionModeLabel: string;
+  themeLabel: string;
   cameraMode: 'orbit' | 'follow' | 'topdown';
   onCameraModeChange: (mode: 'orbit' | 'follow' | 'topdown') => void;
+  onReturnHome: () => void;
 }
 
 export function Toolbar({
   snapshot,
   onRunStateChange,
   onControllerChange,
+  sessionModeLabel,
+  themeLabel,
   cameraMode,
   onCameraModeChange,
+  onReturnHome,
 }: ToolbarProps) {
   const runState = snapshot?.runState ?? 'stopped';
   const isRunning = runState === 'running';
@@ -79,6 +85,16 @@ export function Toolbar({
 
       <div className="toolbar-divider" />
 
+      <div className="toolbar-group">
+        <label className="toolbar-label">Session</label>
+        <div className="toolbar-chip-row">
+          <span className="toolbar-chip">{sessionModeLabel}</span>
+          <span className="toolbar-chip">{themeLabel}</span>
+        </div>
+      </div>
+
+      <div className="toolbar-divider" />
+
       {/* Controller selection */}
       <div className="toolbar-group">
         <label className="toolbar-label">Controller</label>
@@ -108,7 +124,13 @@ export function Toolbar({
               onClick={() => onCameraModeChange(mode)}
             >
               {mode === 'orbit' ? '⊙' : mode === 'follow' ? '⊳' : '⊤'}
-              <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+              <span>
+                {mode === 'follow'
+                  ? 'Hybrid Follow'
+                  : mode === 'topdown'
+                    ? 'Topdown'
+                    : 'Orbit'}
+              </span>
             </button>
           ))}
         </div>
@@ -116,6 +138,9 @@ export function Toolbar({
 
       {/* Status indicator */}
       <div className="toolbar-spacer" />
+      <button className="toolbar-btn" onClick={onReturnHome} title="Return to landing page">
+        <span>Home</span>
+      </button>
       <div className="toolbar-group">
         <div className={`toolbar-status-dot ${runState}`} />
         <span className="toolbar-status-text">

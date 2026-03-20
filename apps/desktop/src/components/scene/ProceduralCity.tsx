@@ -8,8 +8,8 @@
  */
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
 import { generateCity } from '../../lib/cityGenerator';
+import type { SceneTheme } from '../../lib/theme';
 
 // ─── Atlas Constants ───────────────────────────────────────────
 const ATLAS_SIZE = 2048;
@@ -19,22 +19,12 @@ const ATLAS_BAND_ROWS = 42; // rows per lit-percentage band
 const ATLAS_LIT_PCTS = [0.20, 0.35, 0.50, 0.65, 0.80, 0.95];
 const WINDOW_PX = 6;
 
-// Window color palette
-const FACE_COLOR = '#1a1e26'; // dark building face between windows
-const WINDOW_OFF = '#0a0c10'; // unlit window
-const WINDOW_LIT_COLORS = [
-  '#fff5d4', // warm white
-  '#ffe0a0', // warm amber
-  '#d4e8ff', // cool blue-white
-  '#ffd080', // golden
-];
-
 /**
  * Create the window texture atlas.
  * 6 horizontal bands, each 42 rows of 256 window cells.
  * Uses Uint32Array direct pixel writes for speed (10-50x faster than fillRect).
  */
-function createWindowAtlas(): THREE.CanvasTexture {
+function createWindowAtlas(theme: SceneTheme): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = ATLAS_SIZE;
   canvas.height = ATLAS_SIZE;
@@ -54,9 +44,9 @@ function createWindowAtlas(): THREE.CanvasTexture {
     );
   };
 
-  const faceABGR = hexToABGR(FACE_COLOR);
-  const offABGR = hexToABGR(WINDOW_OFF);
-  const litABGRs = WINDOW_LIT_COLORS.map(hexToABGR);
+  const faceABGR = hexToABGR(theme.city.faceColor);
+  const offABGR = hexToABGR(theme.city.windowOff);
+  const litABGRs = theme.city.windowLitColors.map(hexToABGR);
 
   // Fill background with face color
   buf32.fill(faceABGR);
@@ -133,6 +123,12 @@ const buildingVertexShader = /* glsl */ `
 
 const buildingFragmentShader = /* glsl */ `
   uniform sampler2D uAtlas;
+  uniform vec3 uFogColor;
+  uniform float uFogNear;
+  uniform float uFogFar;
+  uniform vec3 uFaceReference;
+  uniform float uRoofWarmth;
+  uniform float uWindowEmissive;
 
   varying vec2 vUv;
   varying vec3 vNormal;
@@ -147,14 +143,14 @@ const buildingFragmentShader = /* glsl */ `
 
     // Roof — slightly different shade, simple lighting
     if (isRoof > 0.5) {
-      vec3 roofColor = vBuildingColor * 0.7 + vec3(0.05, 0.04, 0.03);
+      vec3 roofColor = vBuildingColor * 0.76 + vec3(uRoofWarmth);
       float diffuse = max(dot(vNormal, normalize(vec3(0.5, 0.8, 0.3))), 0.0);
       vec3 lit = roofColor * (0.3 + 0.7 * diffuse);
 
       // Fog
       float dist = length(vWorldPosition - cameraPosition);
-      float fogFactor = smoothstep(100.0, 900.0, dist);
-      lit = mix(lit, vec3(0.10, 0.125, 0.19), fogFactor);
+      float fogFactor = smoothstep(uFogNear, uFogFar, dist);
+      lit = mix(lit, uFogColor, fogFactor);
 
       gl_FragColor = vec4(lit, 1.0);
       return;
@@ -182,18 +178,16 @@ const buildingFragmentShader = /* glsl */ `
     wallColor *= (0.5 + 0.5 * ao);
 
     // Composite: dark face pixels show building color, lit pixels show window light
-    // Atlas face pixels are dark (#1a1e26), windows are brighter
-    vec3 faceRef = vec3(0.10, 0.12, 0.15);
-    float isFacePixel = 1.0 - step(0.08, length(windowColor - faceRef));
+    float isFacePixel = 1.0 - step(0.08, length(windowColor - uFaceReference));
     vec3 finalColor = mix(windowColor, wallColor, isFacePixel);
 
     // Window emissive boost for bloom
-    finalColor += windowColor * isLitWindow * 0.3;
+    finalColor += windowColor * isLitWindow * uWindowEmissive;
 
     // Distance fog
     float dist = length(vWorldPosition - cameraPosition);
-    float fogFactor = smoothstep(100.0, 900.0, dist);
-    finalColor = mix(finalColor, vec3(0.10, 0.125, 0.19), fogFactor);
+    float fogFactor = smoothstep(uFogNear, uFogFar, dist);
+    finalColor = mix(finalColor, uFogColor, fogFactor);
 
     gl_FragColor = vec4(finalColor, 1.0);
   }
@@ -218,6 +212,16 @@ const groundFragmentShader = /* glsl */ `
 
   uniform float uBlockSize;
   uniform float uRoadWidth;
+  uniform vec3 uRoadColor;
+  uniform vec3 uSidewalkColor;
+  uniform vec3 uLineColor;
+  uniform vec3 uParkColor;
+  uniform float uPlazaHalfExtent;
+  uniform vec3 uPlazaColor;
+  uniform vec3 uPlazaAccent;
+  uniform vec3 uFogColor;
+  uniform float uFogNear;
+  uniform float uFogFar;
 
   void main() {
     float cellSize = uBlockSize + uRoadWidth;
@@ -243,11 +247,6 @@ const groundFragmentShader = /* glsl */ `
       isCenterLine = min(1.0, isCenterLine);
     }
 
-    vec3 asphaltColor = vec3(0.08, 0.08, 0.09);
-    vec3 sidewalkColor = vec3(0.18, 0.17, 0.16);
-    vec3 lineColor = vec3(0.7, 0.7, 0.5);
-    vec3 grassColor = vec3(0.04, 0.08, 0.03);
-
     float isSidewalk = 0.0;
     if (isRoad < 0.5) {
       float dxRoad = min(cellPos.x, cellSize - cellPos.x);
@@ -256,28 +255,44 @@ const groundFragmentShader = /* glsl */ `
       isSidewalk = 1.0 - step(1.5, minDist - uRoadWidth);
     }
 
-    vec3 color = grassColor;
+    vec3 color = uParkColor;
     if (isRoad > 0.5) {
-      color = mix(asphaltColor, lineColor, isCenterLine);
+      color = mix(uRoadColor, uLineColor, isCenterLine);
     } else if (isSidewalk > 0.5) {
-      color = sidewalkColor;
+      color = uSidewalkColor;
     }
 
-    float fogFactor = smoothstep(100.0, 900.0, vDist);
-    color = mix(color, vec3(0.10, 0.125, 0.19), fogFactor);
+    float plazaDistance = max(abs(vWorldXZ.x), abs(vWorldXZ.y));
+    float plazaMask = 1.0 - step(uPlazaHalfExtent, plazaDistance);
+    float plazaEdge = 1.0 - smoothstep(uPlazaHalfExtent - 8.0, uPlazaHalfExtent + 8.0, plazaDistance);
+    float stonePattern =
+      0.5 + 0.5 * sin(vWorldXZ.x * 0.08) * sin(vWorldXZ.y * 0.08);
+    vec3 plazaColor = mix(
+      uPlazaColor,
+      uPlazaAccent,
+      stonePattern * 0.12 + plazaEdge * 0.32
+    );
+    color = mix(color, plazaColor, plazaMask);
+
+    float fogFactor = smoothstep(uFogNear, uFogFar, vDist);
+    color = mix(color, uFogColor, fogFactor);
 
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
+interface ProceduralCityProps {
+  theme: SceneTheme;
+}
+
 // ─── Component ────────────────────────────────────────────────
-export function ProceduralCity() {
+export function ProceduralCity({ theme }: ProceduralCityProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const cityData = useMemo(() => generateCity(42), []);
 
   // Create the window texture atlas (once)
-  const atlasTexture = useMemo(() => createWindowAtlas(), []);
+  const atlasTexture = useMemo(() => createWindowAtlas(theme), [theme]);
 
   // Dispose atlas on unmount
   useEffect(() => {
@@ -373,9 +388,15 @@ export function ProceduralCity() {
         fragmentShader: buildingFragmentShader,
         uniforms: {
           uAtlas: { value: atlasTexture },
+          uFogColor: { value: new THREE.Color(theme.city.fogColor) },
+          uFogNear: { value: theme.city.fogNear },
+          uFogFar: { value: theme.city.fogFar },
+          uFaceReference: { value: new THREE.Color(theme.city.faceColor) },
+          uRoofWarmth: { value: theme.city.roofWarmth },
+          uWindowEmissive: { value: theme.city.windowEmissive },
         },
       }),
-    [atlasTexture]
+    [atlasTexture, theme]
   );
 
   // Ground material — use average standard road width since variable roads
@@ -386,10 +407,20 @@ export function ProceduralCity() {
         fragmentShader: groundFragmentShader,
         uniforms: {
           uBlockSize: { value: cityData.blockSize },
-          uRoadWidth: { value: 14.0 },
+          uRoadWidth: { value: cityData.roadWidth },
+          uRoadColor: { value: new THREE.Color(theme.city.groundRoad) },
+          uSidewalkColor: { value: new THREE.Color(theme.city.groundSidewalk) },
+          uLineColor: { value: new THREE.Color(theme.city.groundLine) },
+          uParkColor: { value: new THREE.Color(theme.city.groundPark) },
+          uPlazaHalfExtent: { value: cityData.plazaHalfExtent },
+          uPlazaColor: { value: new THREE.Color(theme.city.groundPlaza) },
+          uPlazaAccent: { value: new THREE.Color(theme.city.groundPlazaAccent) },
+          uFogColor: { value: new THREE.Color(theme.city.fogColor) },
+          uFogNear: { value: theme.city.fogNear },
+          uFogFar: { value: theme.city.fogFar },
         },
       }),
-    [cityData]
+    [cityData, theme]
   );
 
   return (
@@ -400,7 +431,7 @@ export function ProceduralCity() {
         position={[0, -0.05, 0]}
         material={groundMaterial}
       >
-        <planeGeometry args={[4200, 4200, 1, 1]} />
+        <planeGeometry args={[cityData.gridSize + 800, cityData.gridSize + 800, 1, 1]} />
       </mesh>
 
       {/* Buildings — single draw call via InstancedMesh */}

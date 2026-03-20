@@ -4,6 +4,7 @@
  */
 import { useState } from 'react';
 import type {
+  AssistLevel,
   EvaluationReport,
   ScenarioSummary,
   SimulationSnapshot,
@@ -14,8 +15,14 @@ interface ControlPanelProps {
   scenarios: ScenarioSummary[];
   evaluation: EvaluationReport | null;
   isEvaluating: boolean;
+  sessionModeLabel: string;
+  themeLabel: string;
+  assistLevel: AssistLevel;
   onSelectScenario: (id: string) => void;
+  onAssistLevelChange: (level: AssistLevel) => void;
   onRunEvaluation: () => void;
+  onRecenterCamera: () => void;
+  onReturnHome: () => void;
 }
 
 export function ControlPanel({
@@ -23,11 +30,17 @@ export function ControlPanel({
   scenarios,
   evaluation,
   isEvaluating,
+  sessionModeLabel,
+  themeLabel,
+  assistLevel,
   onSelectScenario,
+  onAssistLevelChange,
   onRunEvaluation,
+  onRecenterCamera,
+  onReturnHome,
 }: ControlPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<'scenarios' | 'evaluation'>('scenarios');
+  const [activeTab, setActiveTab] = useState<'session' | 'scenarios' | 'evaluation'>('session');
 
   if (collapsed) {
     return (
@@ -47,6 +60,12 @@ export function ControlPanel({
       {/* Tab switcher */}
       <div className="hud-tabs">
         <button
+          className={`hud-tab ${activeTab === 'session' ? 'active' : ''}`}
+          onClick={() => setActiveTab('session')}
+        >
+          Session
+        </button>
+        <button
           className={`hud-tab ${activeTab === 'scenarios' ? 'active' : ''}`}
           onClick={() => setActiveTab('scenarios')}
         >
@@ -60,7 +79,17 @@ export function ControlPanel({
         </button>
       </div>
 
-      {activeTab === 'scenarios' ? (
+      {activeTab === 'session' ? (
+        <SessionTab
+          snapshot={snapshot}
+          sessionModeLabel={sessionModeLabel}
+          themeLabel={themeLabel}
+          assistLevel={assistLevel}
+          onAssistLevelChange={onAssistLevelChange}
+          onRecenterCamera={onRecenterCamera}
+          onReturnHome={onReturnHome}
+        />
+      ) : activeTab === 'scenarios' ? (
         <ScenariosTab
           scenarios={scenarios}
           snapshot={snapshot}
@@ -73,6 +102,92 @@ export function ControlPanel({
           onRunEvaluation={onRunEvaluation}
         />
       )}
+    </div>
+  );
+}
+
+const assistOptions: Array<{ value: AssistLevel; label: string }> = [
+  { value: 'intent_assist', label: 'Intent Assist' },
+  { value: 'stabilized', label: 'Stabilized' },
+  { value: 'cruise_assist', label: 'Cruise Assist' },
+  { value: 'manual', label: 'Manual' },
+];
+
+function SessionTab({
+  snapshot,
+  sessionModeLabel,
+  themeLabel,
+  assistLevel,
+  onAssistLevelChange,
+  onRecenterCamera,
+  onReturnHome,
+}: {
+  snapshot: SimulationSnapshot | null;
+  sessionModeLabel: string;
+  themeLabel: string;
+  assistLevel: AssistLevel;
+  onAssistLevelChange: (level: AssistLevel) => void;
+  onRecenterCamera: () => void;
+  onReturnHome: () => void;
+}) {
+  return (
+    <div className="hud-scroll-area">
+      <div className="session-summary-grid">
+        <SessionStat label="Mode" value={sessionModeLabel} />
+        <SessionStat label="Theme" value={themeLabel} />
+        <SessionStat label="Flight" value={formatFlightPhase(snapshot?.flightPhase)} />
+        <SessionStat label="Motors" value={snapshot?.motorsArmed ? 'Armed' : 'Cold'} />
+      </div>
+
+      <div className="session-section">
+        <div className="hud-section-label">Assist</div>
+        <select
+          className="toolbar-select session-select"
+          value={assistLevel}
+          onChange={(e) => onAssistLevelChange(e.target.value as AssistLevel)}
+        >
+          {assistOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="session-action-grid">
+        <button className="session-action-btn" onClick={onRecenterCamera}>
+          Recenter Camera
+        </button>
+        <button className="session-action-btn secondary" onClick={onReturnHome}>
+          Return Home
+        </button>
+      </div>
+
+      <div className="session-section">
+        <div className="hud-section-label">Flight Keys</div>
+        <div className="control-legend">
+          <div className="control-legend-row">
+            <span>W / S</span>
+            <span>Forward / backward intent</span>
+          </div>
+          <div className="control-legend-row">
+            <span>A / D</span>
+            <span>Strafe left / right</span>
+          </div>
+          <div className="control-legend-row">
+            <span>Left / Right</span>
+            <span>Yaw left / right</span>
+          </div>
+          <div className="control-legend-row">
+            <span>Up / Down</span>
+            <span>Hold Up 3s to arm, then climb / descend</span>
+          </div>
+          <div className="control-legend-row">
+            <span>Trackpad</span>
+            <span>Orbit and zoom the chase camera</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -198,9 +313,27 @@ function EvaluationTab({
 
 function formatMode(mode: string): string {
   switch (mode) {
+    case 'player': return 'Player';
     case 'adaptive_supervisor': return 'Adaptive';
     case 'waypoint_follow': return 'Waypoint';
     case 'recovery': return 'Recovery';
     default: return 'Stabilize';
   }
+}
+
+function formatFlightPhase(flightPhase?: string): string {
+  switch (flightPhase) {
+    case 'arming': return 'Arming';
+    case 'airborne': return 'Airborne';
+    default: return 'On Pad';
+  }
+}
+
+function SessionStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="session-stat">
+      <span className="session-stat-label">{label}</span>
+      <span className="session-stat-value">{value}</span>
+    </div>
+  );
 }

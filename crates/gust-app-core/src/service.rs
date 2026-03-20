@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use gust_sim_bridge::{NativeFrame, Simulator};
 use gust_types::{
-    AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioConfig,
-    ScenarioSummary, SimulationSnapshot,
+    AssistLevel, ControllerMode, EvaluationReport, FlightPhase, PlayerInput, RunState,
+    ScenarioConfig, ScenarioSummary, SimulationSnapshot,
 };
 use parking_lot::{Mutex, RwLock};
 
@@ -41,10 +41,13 @@ impl SimulationService {
         let initial_frame = simulator.frame();
         let initial_snapshot = build_snapshot(
             &initial_frame,
-            RunState::Running,
+            RunState::Stopped,
             controller.mode(),
+            controller.assist_level(),
+            controller.flight_phase(),
+            controller.motors_armed(),
             &active_scenario,
-            "Player control active — use WASD/Space/Shift to fly.".into(),
+            "Landing ready | launch Flyover Mode to enter the city.".into(),
             None,
         );
 
@@ -53,8 +56,8 @@ impl SimulationService {
             scenarios,
             active_scenario_id: active_scenario.id.clone(),
             controller,
-            run_state: RunState::Running,
-            last_status: "Player control active — use WASD/Space/Shift to fly.".into(),
+            run_state: RunState::Stopped,
+            last_status: "Landing ready | launch Flyover Mode to enter the city.".into(),
             last_snapshot: initial_snapshot.clone(),
         }));
         let snapshot = Arc::new(RwLock::new(initial_snapshot));
@@ -207,6 +210,9 @@ impl Engine {
             &frame,
             self.run_state,
             self.controller.mode(),
+            self.controller.assist_level(),
+            self.controller.flight_phase(),
+            self.controller.motors_armed(),
             &scenario,
             self.last_status.clone(),
             output.active_waypoint_index,
@@ -219,10 +225,14 @@ impl Engine {
         match next_state {
             RunState::Running => {
                 if matches!(self.run_state, RunState::Stopped) {
-                    self.reset_current("Simulation started from initial conditions.")?;
+                    self.reset_current("Flyover ready | hold Up for 3s to arm and take off.")?;
                 }
                 self.run_state = RunState::Running;
-                self.last_status = "Simulation running.".into();
+                self.last_status = if self.controller.mode() == ControllerMode::Player {
+                    "Flyover ready | hold Up for 3s to arm and take off.".into()
+                } else {
+                    "Simulation running.".into()
+                };
                 self.sync_snapshot(None)?;
             }
             RunState::Paused => {
@@ -276,10 +286,21 @@ impl Engine {
     fn sync_snapshot(&mut self, active_waypoint_index: Option<usize>) -> Result<()> {
         let scenario = self.active_scenario()?.clone();
         let frame = self.simulator.frame();
+        let assist_level = self.controller.assist_level();
+        let (flight_phase, motors_armed) = if self.controller.mode() == ControllerMode::Player {
+            (self.controller.flight_phase(), self.controller.motors_armed())
+        } else if matches!(self.run_state, RunState::Running | RunState::Paused) {
+            (FlightPhase::Airborne, true)
+        } else {
+            (FlightPhase::IdleOnPad, false)
+        };
         self.last_snapshot = build_snapshot(
             &frame,
             self.run_state,
             self.controller.mode(),
+            assist_level,
+            flight_phase,
+            motors_armed,
             &scenario,
             self.last_status.clone(),
             active_waypoint_index,
@@ -299,6 +320,9 @@ fn build_snapshot(
     frame: &NativeFrame,
     run_state: RunState,
     controller_mode: ControllerMode,
+    assist_level: Option<AssistLevel>,
+    flight_phase: FlightPhase,
+    motors_armed: bool,
     scenario: &ScenarioConfig,
     status_text: String,
     active_waypoint_index: Option<usize>,
@@ -306,6 +330,9 @@ fn build_snapshot(
     SimulationSnapshot {
         run_state,
         controller_mode,
+        assist_level,
+        flight_phase,
+        motors_armed,
         tick: frame.tick,
         sim_time_s: frame.sim_time_s,
         status_text,

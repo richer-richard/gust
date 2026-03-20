@@ -1,7 +1,10 @@
 use gust_sim_bridge::NativeFrame;
-use gust_types::{AssistLevel, ControllerMode, PlayerInput, ScenarioConfig, Vec3};
+use gust_types::{AssistLevel, ControllerMode, FlightPhase, PlayerInput, ScenarioConfig, Vec3};
 
 const HOVER_THROTTLE: f64 = 0.615;
+const TAKEOFF_HOLD_S: f64 = 3.0;
+const TAKEOFF_TARGET_ALTITUDE_M: f64 = 6.0;
+const MAX_FLIGHT_ALTITUDE_M: f64 = 220.0;
 
 #[derive(Clone, Debug)]
 pub struct ControllerOutput {
@@ -64,6 +67,27 @@ impl ControllerState {
         }
     }
 
+    pub fn assist_level(&self) -> Option<AssistLevel> {
+        match self {
+            Self::Player(controller) => Some(controller.assist_level),
+            _ => None,
+        }
+    }
+
+    pub fn flight_phase(&self) -> FlightPhase {
+        match self {
+            Self::Player(controller) => controller.flight_phase,
+            _ => FlightPhase::Airborne,
+        }
+    }
+
+    pub fn motors_armed(&self) -> bool {
+        match self {
+            Self::Player(controller) => controller.motors_armed,
+            _ => true,
+        }
+    }
+
     pub fn update(
         &mut self,
         dt: f64,
@@ -80,26 +104,100 @@ impl ControllerState {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct PlayerController {
     pub input: PlayerInput,
     pub assist_level: AssistLevel,
     hold_altitude: f64,
+    flight_phase: FlightPhase,
+    motors_armed: bool,
+    takeoff_hold_s: f64,
+}
+
+impl Default for PlayerController {
+    fn default() -> Self {
+        Self {
+            input: PlayerInput::default(),
+            assist_level: AssistLevel::IntentAssist,
+            hold_altitude: 0.0,
+            flight_phase: FlightPhase::IdleOnPad,
+            motors_armed: false,
+            takeoff_hold_s: 0.0,
+        }
+    }
 }
 
 impl PlayerController {
     fn reset(&mut self) {
         self.input = PlayerInput::default();
         self.hold_altitude = 0.0;
+        self.flight_phase = FlightPhase::IdleOnPad;
+        self.motors_armed = false;
+        self.takeoff_hold_s = 0.0;
     }
 
     fn update(
         &mut self,
-        _dt: f64,
+        dt: f64,
         frame: &NativeFrame,
         _scenario: &ScenarioConfig,
     ) -> ControllerOutput {
         let input = self.input;
+        let altitude = if frame.sensors.altimeter_valid {
+            frame.sensors.altimeter_altitude
+        } else {
+            frame.drone.position.z
+        };
+
+        if !self.motors_armed {
+            let climb_intent = input.throttle.max(0.0);
+            if climb_intent > 0.6 {
+                self.takeoff_hold_s = clamp(self.takeoff_hold_s + dt, 0.0, TAKEOFF_HOLD_S);
+                self.flight_phase = FlightPhase::Arming;
+            } else {
+                self.takeoff_hold_s = 0.0;
+                self.flight_phase = FlightPhase::IdleOnPad;
+            }
+
+            let arming_progress = self.takeoff_hold_s / TAKEOFF_HOLD_S;
+            let spool = if self.flight_phase == FlightPhase::Arming {
+                0.05 + arming_progress * 0.09
+            } else {
+                0.0
+            };
+
+            if self.takeoff_hold_s >= TAKEOFF_HOLD_S {
+                self.motors_armed = true;
+                self.flight_phase = FlightPhase::Airborne;
+                self.hold_altitude = TAKEOFF_TARGET_ALTITUDE_M.max(altitude + 1.5);
+            }
+
+            return ControllerOutput {
+                rotor_command: [spool; 4],
+                status_text: if self.flight_phase == FlightPhase::Arming {
+                    format!(
+                        "Arming motors {:.0}% | hold Up to launch",
+                        arming_progress * 100.0
+                    )
+                } else {
+                    "On plaza | hold Up for 3s to arm and take off".into()
+                },
+                active_waypoint_index: None,
+                recovery_event: false,
+            };
+        }
+
+        if altitude < 0.25 && input.throttle < -0.75 && frame.drone.velocity.z.abs() < 0.5 {
+            self.motors_armed = false;
+            self.flight_phase = FlightPhase::IdleOnPad;
+            self.takeoff_hold_s = 0.0;
+            self.hold_altitude = 0.0;
+            return ControllerOutput {
+                rotor_command: [0.0; 4],
+                status_text: "Landed on plaza | hold Up for 3s to arm and take off".into(),
+                active_waypoint_index: None,
+                recovery_event: false,
+            };
+        }
 
         match self.assist_level {
             AssistLevel::Manual => {
@@ -118,6 +216,60 @@ impl PlayerController {
                     ),
                     active_waypoint_index: None,
                     recovery_event: false,
+                }
+            }
+            AssistLevel::IntentAssist => {
+                if self.hold_altitude <= 0.1 {
+                    self.hold_altitude = altitude.max(2.5);
+                }
+
+                if input.throttle.abs() > 0.05 {
+                    self.hold_altitude = clamp(
+                        self.hold_altitude + input.throttle * dt * 7.5,
+                        1.5,
+                        MAX_FLIGHT_ALTITUDE_M,
+                    );
+                } else {
+                    self.hold_altitude = clamp(self.hold_altitude, 1.5, MAX_FLIGHT_ALTITUDE_M);
+                }
+
+                let desired_pitch =
+                    clamp(input.pitch * 0.30 - frame.drone.velocity.x * 0.055, -0.34, 0.34);
+                let desired_roll =
+                    clamp(-input.roll * 0.30 - frame.drone.velocity.y * 0.055, -0.34, 0.34);
+                let target_yaw_rate = input.yaw * 1.45;
+                let thrust =
+                    altitude_hold(self.hold_altitude, altitude, frame.drone.velocity.z, 0.24);
+
+                let roll = attitude_hold(
+                    desired_roll,
+                    frame.drone.euler.x,
+                    frame.drone.angular_velocity.x,
+                    0.20,
+                );
+                let pitch = attitude_hold(
+                    desired_pitch,
+                    frame.drone.euler.y,
+                    frame.drone.angular_velocity.y,
+                    0.20,
+                );
+                let yaw = clamp(
+                    (target_yaw_rate - frame.drone.angular_velocity.z) * 0.10
+                        - frame.drone.angular_velocity.z * 0.02,
+                    -0.18,
+                    0.18,
+                );
+
+                ControllerOutput {
+                    rotor_command: mix_rotors(thrust, roll, pitch, yaw),
+                    status_text: format!(
+                        "Flyover | hold {:.1}m | HP {:.0}% | yaw {:.0}°",
+                        self.hold_altitude,
+                        frame.drone.health * 100.0,
+                        frame.drone.euler.z.to_degrees()
+                    ),
+                    active_waypoint_index: None,
+                    recovery_event: frame.drone.recovery_margin < 0.18,
                 }
             }
             AssistLevel::Stabilized => {

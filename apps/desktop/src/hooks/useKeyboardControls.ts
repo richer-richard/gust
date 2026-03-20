@@ -1,6 +1,6 @@
 /**
- * useKeyboardControls — Captures WASD/Arrow/Space/Shift/Q/E keys
- * and sends PlayerInput to the Tauri backend every animation frame.
+ * useKeyboardControls — Captures flyover controls and sends input to the backend
+ * only when the effective input changes.
  */
 import { useEffect, useRef, useCallback } from 'react';
 import { setPlayerInput } from '../lib/tauri';
@@ -8,16 +8,16 @@ import type { PlayerInput } from '../lib/types';
 
 const KEY_MAP: Record<string, keyof typeof AXIS_MAP> = {
   KeyW: 'pitchPos',
-  ArrowUp: 'pitchPos',
   KeyS: 'pitchNeg',
-  ArrowDown: 'pitchNeg',
   KeyA: 'rollNeg',
-  ArrowLeft: 'rollNeg',
   KeyD: 'rollPos',
-  ArrowRight: 'rollPos',
+  ArrowLeft: 'yawNeg',
+  ArrowRight: 'yawPos',
   KeyQ: 'yawNeg',
   KeyE: 'yawPos',
+  ArrowUp: 'throttlePos',
   Space: 'throttlePos',
+  ArrowDown: 'throttleNeg',
   ShiftLeft: 'throttleNeg',
   ShiftRight: 'throttleNeg',
 };
@@ -33,72 +33,77 @@ const AXIS_MAP = {
   throttleNeg: false,
 };
 
-export function useKeyboardControls() {
+export function useKeyboardControls(enabled: boolean) {
   const keysRef = useRef({ ...AXIS_MAP });
-  const rafRef = useRef<number>(0);
-  const activeRef = useRef(true);
+  const lastSentRef = useRef<PlayerInput | null>(null);
+
+  const emitInput = useCallback(() => {
+    const k = keysRef.current;
+    const nextInput: PlayerInput = {
+      pitch: (k.pitchPos ? 1 : 0) - (k.pitchNeg ? 1 : 0),
+      roll: (k.rollPos ? 1 : 0) - (k.rollNeg ? 1 : 0),
+      yaw: (k.yawPos ? 1 : 0) - (k.yawNeg ? 1 : 0),
+      throttle: (k.throttlePos ? 1 : 0) - (k.throttleNeg ? 1 : 0),
+    };
+
+    const last = lastSentRef.current;
+    if (
+      last &&
+      last.pitch === nextInput.pitch &&
+      last.roll === nextInput.roll &&
+      last.yaw === nextInput.yaw &&
+      last.throttle === nextInput.throttle
+    ) {
+      return;
+    }
+
+    lastSentRef.current = nextInput;
+    void setPlayerInput(nextInput);
+  }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const axis = KEY_MAP[e.code];
     if (axis) {
       e.preventDefault();
       keysRef.current[axis] = true;
+      emitInput();
     }
-  }, []);
+  }, [emitInput]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     const axis = KEY_MAP[e.code];
     if (axis) {
       e.preventDefault();
       keysRef.current[axis] = false;
+      emitInput();
     }
-  }, []);
+  }, [emitInput]);
 
   const handleBlur = useCallback(() => {
-    // Release all keys on window blur
     keysRef.current = { ...AXIS_MAP };
-  }, []);
+    emitInput();
+  }, [emitInput]);
 
   useEffect(() => {
+    if (!enabled) {
+      keysRef.current = { ...AXIS_MAP };
+      lastSentRef.current = null;
+      void setPlayerInput({ pitch: 0, roll: 0, yaw: 0, throttle: 0 });
+      return;
+    }
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);
-
-    const sendLoop = () => {
-      if (!activeRef.current) return;
-
-      const k = keysRef.current;
-      const input: PlayerInput = {
-        pitch: (k.pitchPos ? 1 : 0) - (k.pitchNeg ? 1 : 0),
-        roll: (k.rollPos ? 1 : 0) - (k.rollNeg ? 1 : 0),
-        yaw: (k.yawPos ? 1 : 0) - (k.yawNeg ? 1 : 0),
-        throttle: (k.throttlePos ? 1 : 0) - (k.throttleNeg ? 1 : 0),
-      };
-
-      // Only send if there's actual input to avoid unnecessary IPC
-      if (
-        input.pitch !== 0 ||
-        input.roll !== 0 ||
-        input.yaw !== 0 ||
-        input.throttle !== 0
-      ) {
-        void setPlayerInput(input);
-      } else {
-        // Send zero input to stop drone movement
-        void setPlayerInput({ pitch: 0, roll: 0, yaw: 0, throttle: 0 });
-      }
-
-      rafRef.current = requestAnimationFrame(sendLoop);
-    };
-
-    rafRef.current = requestAnimationFrame(sendLoop);
+    emitInput();
 
     return () => {
-      activeRef.current = false;
-      cancelAnimationFrame(rafRef.current);
+      keysRef.current = { ...AXIS_MAP };
+      lastSentRef.current = null;
+      void setPlayerInput({ pitch: 0, roll: 0, yaw: 0, throttle: 0 });
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [handleKeyDown, handleKeyUp, handleBlur]);
+  }, [enabled, emitInput, handleKeyDown, handleKeyUp, handleBlur]);
 }
