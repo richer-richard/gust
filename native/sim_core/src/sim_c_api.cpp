@@ -102,11 +102,15 @@ struct GustSimHandle {
 };
 
 extern "C" GustSimHandle *gust_sim_create(const GustScenarioConfig *config) {
-  if (config == nullptr) {
+  try {
+    if (config == nullptr) {
+      return nullptr;
+    }
+
+    return new GustSimHandle(from_c(*config));
+  } catch (...) {
     return nullptr;
   }
-
-  return new GustSimHandle(from_c(*config));
 }
 
 extern "C" void gust_sim_destroy(GustSimHandle *handle) {
@@ -114,46 +118,66 @@ extern "C" void gust_sim_destroy(GustSimHandle *handle) {
 }
 
 extern "C" void gust_sim_reset(GustSimHandle *handle, const GustScenarioConfig *config) {
-  if (handle == nullptr || config == nullptr) {
+  try {
+    if (handle == nullptr || config == nullptr) {
+      return;
+    }
+
+    handle->simulator.reset(from_c(*config));
+  } catch (...) {
     return;
   }
-
-  handle->simulator.reset(from_c(*config));
 }
 
 extern "C" void gust_sim_set_rotor_command(GustSimHandle *handle, GustRotorCommand command) {
-  if (handle == nullptr) {
+  try {
+    if (handle == nullptr) {
+      return;
+    }
+
+    handle->simulator.set_rotor_command({
+        command.normalized[0],
+        command.normalized[1],
+        command.normalized[2],
+        command.normalized[3],
+    });
+  } catch (...) {
     return;
   }
-
-  handle->simulator.set_rotor_command({
-      command.normalized[0],
-      command.normalized[1],
-      command.normalized[2],
-      command.normalized[3],
-  });
 }
 
 extern "C" void gust_sim_step(GustSimHandle *handle, double dt) {
-  if (handle == nullptr) {
+  try {
+    if (handle == nullptr) {
+      return;
+    }
+
+    handle->simulator.step(dt);
+  } catch (...) {
     return;
   }
-
-  handle->simulator.step(dt);
 }
 
 extern "C" void gust_sim_take_damage(GustSimHandle *handle, double amount) {
-  if (handle == nullptr) {
+  try {
+    if (handle == nullptr) {
+      return;
+    }
+
+    handle->simulator.take_damage(amount);
+  } catch (...) {
     return;
   }
-
-  handle->simulator.take_damage(amount);
 }
 
 extern "C" GustStateFrame gust_sim_get_frame(const GustSimHandle *handle) {
-  if (handle == nullptr) {
+  try {
+    if (handle == nullptr) {
+      return GustStateFrame{};
+    }
+
+    return to_c(handle->simulator.snapshot());
+  } catch (...) {
     return GustStateFrame{};
   }
-
-  return to_c(handle->simulator.snapshot());
 }

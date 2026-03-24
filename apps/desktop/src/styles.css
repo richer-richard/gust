@@ -1319,12 +1319,20 @@ button, select, input {
   bottom: 42px;
   width: 228px;
   padding: 0;
+  display: flex;
+  flex-direction: column;
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(96, 129, 160, 0.4);
   background: rgba(10, 16, 24, 0.9);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.camera-inset:hover {
+  border-color: rgba(0, 204, 255, 0.55);
+  transform: translateY(-1px);
 }
 
 .camera-inset-header {
@@ -1340,8 +1348,94 @@ button, select, input {
 }
 
 .camera-inset-view {
-  height: 132px;
-  pointer-events: none;
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+.camera-inset-radar {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  justify-self: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(0, 204, 255, 0.14), rgba(0, 204, 255, 0.02) 62%, transparent 64%),
+    linear-gradient(180deg, rgba(0, 204, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(0, 204, 255, 0.22);
+}
+
+.camera-inset-radar-ring,
+.camera-inset-crosshair,
+.camera-inset-arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.camera-inset-radar-ring {
+  border-radius: 50%;
+  border: 1px solid rgba(0, 204, 255, 0.22);
+  transform: translate(-50%, -50%);
+}
+
+.camera-inset-radar-ring.outer {
+  width: 64px;
+  height: 64px;
+}
+
+.camera-inset-radar-ring.inner {
+  width: 34px;
+  height: 34px;
+}
+
+.camera-inset-crosshair {
+  background: rgba(0, 204, 255, 0.18);
+  transform: translate(-50%, -50%);
+}
+
+.camera-inset-crosshair.horizontal {
+  width: 60px;
+  height: 1px;
+}
+
+.camera-inset-crosshair.vertical {
+  width: 1px;
+  height: 60px;
+}
+
+.camera-inset-arrow {
+  font-size: 20px;
+  color: var(--accent-cyan);
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(0, 204, 255, 0.45);
+  transform-origin: center;
+}
+
+.camera-inset-stats {
+  display: grid;
+  gap: 8px;
+}
+
+.camera-inset-stat {
+  display: grid;
+  gap: 2px;
+}
+
+.camera-inset-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.camera-inset-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
 }
 
 /* ═══════════════════════════════════════
@@ -1379,6 +1473,7 @@ button, select, input {
     width: 180px;
   }
   .camera-inset-view {
-    height: 110px;
+    grid-template-columns: 1fr;
+    min-height: 110px;
   }
 }

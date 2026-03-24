@@ -14,6 +14,10 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
+        native_dir.join("src/sim.hpp").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
         native_dir.join("src/sim.cpp").display()
     );
     println!(

@@ -31,17 +31,20 @@ unsafe impl Send for Simulator {}
 
 impl Simulator {
     pub fn new(config: &ScenarioConfig) -> Result<Self> {
+        validate_scenario(config)?;
         let ffi_config = GustScenarioConfig::from(config);
         let raw = unsafe { gust_sim_create(&ffi_config) };
         let raw = NonNull::new(raw).ok_or_else(|| anyhow!("failed to create Gust simulator"))?;
         Ok(Self { raw })
     }
 
-    pub fn reset(&mut self, config: &ScenarioConfig) {
+    pub fn reset(&mut self, config: &ScenarioConfig) -> Result<()> {
+        validate_scenario(config)?;
         let ffi_config = GustScenarioConfig::from(config);
         unsafe {
             gust_sim_reset(self.raw.as_ptr(), &ffi_config);
         }
+        Ok(())
     }
 
     pub fn set_rotor_command(&mut self, normalized: [f64; 4]) {
@@ -352,4 +355,26 @@ unsafe extern "C" {
     fn gust_sim_step(handle: *mut GustSimHandle, dt: f64);
     fn gust_sim_take_damage(handle: *mut GustSimHandle, amount: f64);
     fn gust_sim_get_frame(handle: *const GustSimHandle) -> GustStateFrame;
+}
+
+fn validate_scenario(config: &ScenarioConfig) -> Result<()> {
+    if config.obstacles.len() > MAX_OBSTACLES {
+        return Err(anyhow!(
+            "scenario '{}' has {} obstacles, but the native simulator supports at most {}",
+            config.id,
+            config.obstacles.len(),
+            MAX_OBSTACLES
+        ));
+    }
+
+    if config.waypoints.len() > MAX_WAYPOINTS {
+        return Err(anyhow!(
+            "scenario '{}' has {} waypoints, but the native simulator supports at most {}",
+            config.id,
+            config.waypoints.len(),
+            MAX_WAYPOINTS
+        ));
+    }
+
+    Ok(())
 }

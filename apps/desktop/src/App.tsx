@@ -43,6 +43,10 @@ export default function App() {
   const sessionIsActive = sessionStage === 'active';
   const showScenarioVisuals = sessionIsActive && snapshot?.activeScenarioId !== 'city_flyover';
 
+  const ignoreCommandError = (promise: Promise<void>) => {
+    void promise.catch(() => {});
+  };
+
   const recenterCamera = () => {
     setCameraMode('follow');
     setDroneFramingLost(false);
@@ -127,8 +131,8 @@ export default function App() {
           <>
             <Toolbar
               snapshot={snapshot}
-              onRunStateChange={(s) => void setRunState(s)}
-              onControllerChange={(m) => void setControllerMode(m)}
+              onRunStateChange={(s) => ignoreCommandError(setRunState(s))}
+              onControllerChange={(m) => ignoreCommandError(setControllerMode(m))}
               sessionModeLabel="Flyover"
               themeLabel={theme.name}
               cameraMode={cameraMode}
@@ -146,9 +150,9 @@ export default function App() {
                 sessionModeLabel="Flyover"
                 themeLabel={theme.name}
                 assistLevel={assistLevel}
-                onSelectScenario={(id) => void activateScenario(id)}
-                onAssistLevelChange={(level) => void setAssistLevel(level)}
-                onRunEvaluation={() => void runEvaluation()}
+                onSelectScenario={(id) => ignoreCommandError(activateScenario(id))}
+                onAssistLevelChange={(level) => ignoreCommandError(setAssistLevel(level))}
+                onRunEvaluation={() => ignoreCommandError(runEvaluation())}
                 onRecenterCamera={recenterCamera}
                 onReturnHome={() => void returnToLanding()}
               />
@@ -161,7 +165,6 @@ export default function App() {
         {snapshot && sessionIsActive && droneFramingLost && cameraMode !== 'topdown' && (
           <CameraRecoveryInset
             snapshot={snapshot}
-            theme={theme}
             onClick={recenterCamera}
           />
         )}

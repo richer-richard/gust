@@ -249,8 +249,10 @@ impl Engine {
     }
 
     fn set_controller_mode(&mut self, mode: ControllerMode) -> Result<()> {
+        let frame = self.simulator.frame();
         self.controller = ControllerState::new(mode);
         self.controller.reset();
+        self.controller.sync_with_frame(self.run_state, &frame);
         self.last_status = format!("Controller switched to {:?}.", mode);
         self.sync_snapshot(None)
     }
@@ -269,7 +271,7 @@ impl Engine {
 
         self.active_scenario_id = scenario.id.clone();
         self.run_state = RunState::Stopped;
-        self.simulator.reset(&scenario);
+        self.simulator.reset(&scenario)?;
         self.controller.reset();
         self.last_status = format!("Scenario loaded: {}.", scenario.name);
         self.sync_snapshot(None)
@@ -277,7 +279,7 @@ impl Engine {
 
     fn reset_current(&mut self, status: &str) -> Result<()> {
         let scenario = self.active_scenario()?.clone();
-        self.simulator.reset(&scenario);
+        self.simulator.reset(&scenario)?;
         self.controller.reset();
         self.last_status = status.into();
         self.sync_snapshot(None)
@@ -288,7 +290,10 @@ impl Engine {
         let frame = self.simulator.frame();
         let assist_level = self.controller.assist_level();
         let (flight_phase, motors_armed) = if self.controller.mode() == ControllerMode::Player {
-            (self.controller.flight_phase(), self.controller.motors_armed())
+            (
+                self.controller.flight_phase(),
+                self.controller.motors_armed(),
+            )
         } else if matches!(self.run_state, RunState::Running | RunState::Paused) {
             (FlightPhase::Airborne, true)
         } else {

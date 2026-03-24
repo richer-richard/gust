@@ -1,5 +1,7 @@
 use gust_sim_bridge::NativeFrame;
-use gust_types::{AssistLevel, ControllerMode, FlightPhase, PlayerInput, ScenarioConfig, Vec3};
+use gust_types::{
+    AssistLevel, ControllerMode, FlightPhase, PlayerInput, RunState, ScenarioConfig, Vec3,
+};
 
 const HOVER_THROTTLE: f64 = 0.615;
 const TAKEOFF_HOLD_S: f64 = 3.0;
@@ -11,6 +13,7 @@ pub struct ControllerOutput {
     pub rotor_command: [f64; 4],
     pub status_text: String,
     pub active_waypoint_index: Option<usize>,
+    pub completed_waypoint_count: usize,
     pub recovery_event: bool,
 }
 
@@ -102,6 +105,12 @@ impl ControllerState {
             Self::AdaptiveSupervisor(controller) => controller.update(dt, frame, scenario),
         }
     }
+
+    pub fn sync_with_frame(&mut self, run_state: RunState, frame: &NativeFrame) {
+        if let Self::Player(controller) = self {
+            controller.adopt_vehicle_state(run_state, frame);
+        }
+    }
 }
 
 pub(crate) struct PlayerController {
@@ -182,6 +191,7 @@ impl PlayerController {
                     "On plaza | hold Up for 3s to arm and take off".into()
                 },
                 active_waypoint_index: None,
+                completed_waypoint_count: 0,
                 recovery_event: false,
             };
         }
@@ -195,6 +205,7 @@ impl PlayerController {
                 rotor_command: [0.0; 4],
                 status_text: "Landed on plaza | hold Up for 3s to arm and take off".into(),
                 active_waypoint_index: None,
+                completed_waypoint_count: 0,
                 recovery_event: false,
             };
         }
@@ -215,6 +226,7 @@ impl PlayerController {
                         frame.drone.position.z
                     ),
                     active_waypoint_index: None,
+                    completed_waypoint_count: 0,
                     recovery_event: false,
                 }
             }
@@ -233,10 +245,16 @@ impl PlayerController {
                     self.hold_altitude = clamp(self.hold_altitude, 1.5, MAX_FLIGHT_ALTITUDE_M);
                 }
 
-                let desired_pitch =
-                    clamp(input.pitch * 0.30 - frame.drone.velocity.x * 0.055, -0.34, 0.34);
-                let desired_roll =
-                    clamp(-input.roll * 0.30 - frame.drone.velocity.y * 0.055, -0.34, 0.34);
+                let desired_pitch = clamp(
+                    input.pitch * 0.30 - frame.drone.velocity.x * 0.055,
+                    -0.34,
+                    0.34,
+                );
+                let desired_roll = clamp(
+                    -input.roll * 0.30 - frame.drone.velocity.y * 0.055,
+                    -0.34,
+                    0.34,
+                );
                 let target_yaw_rate = input.yaw * 1.45;
                 let thrust =
                     altitude_hold(self.hold_altitude, altitude, frame.drone.velocity.z, 0.24);
@@ -269,6 +287,7 @@ impl PlayerController {
                         frame.drone.euler.z.to_degrees()
                     ),
                     active_waypoint_index: None,
+                    completed_waypoint_count: 0,
                     recovery_event: frame.drone.recovery_margin < 0.18,
                 }
             }
@@ -307,6 +326,7 @@ impl PlayerController {
                         frame.drone.position.z
                     ),
                     active_waypoint_index: None,
+                    completed_waypoint_count: 0,
                     recovery_event: false,
                 }
             }
@@ -360,9 +380,31 @@ impl PlayerController {
                         frame.drone.position.z
                     ),
                     active_waypoint_index: None,
+                    completed_waypoint_count: 0,
                     recovery_event: false,
                 }
             }
+        }
+    }
+
+    fn adopt_vehicle_state(&mut self, run_state: RunState, frame: &NativeFrame) {
+        if matches!(run_state, RunState::Stopped) {
+            return;
+        }
+
+        let altitude = if frame.sensors.altimeter_valid {
+            frame.sensors.altimeter_altitude
+        } else {
+            frame.drone.position.z
+        };
+        let airborne =
+            altitude > 0.5 || frame.drone.position.z > 0.5 || frame.drone.velocity.z.abs() > 0.5;
+
+        if airborne {
+            self.motors_armed = true;
+            self.flight_phase = FlightPhase::Airborne;
+            self.takeoff_hold_s = TAKEOFF_HOLD_S;
+            self.hold_altitude = clamp(altitude.max(1.5), 1.5, MAX_FLIGHT_ALTITUDE_M);
         }
     }
 }
@@ -405,7 +447,7 @@ impl StabilizeController {
             frame.drone.angular_velocity.y,
             0.18,
         );
-        let yaw = attitude_hold(
+        let yaw = heading_hold(
             0.0,
             frame.drone.euler.z,
             frame.drone.angular_velocity.z,
@@ -419,6 +461,7 @@ impl StabilizeController {
                 self.hold_altitude_m, frame.environment.turbulence_index
             ),
             active_waypoint_index: None,
+            completed_waypoint_count: 0,
             recovery_event: frame.drone.recovery_margin < 0.3,
         }
     }
@@ -501,12 +544,20 @@ impl WaypointController {
             frame.drone.angular_velocity.y,
             0.16,
         );
-        let yaw = attitude_hold(
+        let yaw = heading_hold(
             desired_yaw,
             frame.drone.euler.z,
             frame.drone.angular_velocity.z,
             0.07,
         );
+
+        let completed_waypoint_count = if self.active_index + 1 >= scenario.waypoints.len()
+            && self.hold_elapsed_s >= active.hold_s
+        {
+            scenario.waypoints.len()
+        } else {
+            self.active_index
+        };
 
         ControllerOutput {
             rotor_command: mix_rotors(thrust, roll, pitch, yaw),
@@ -518,6 +569,7 @@ impl WaypointController {
                 active.hold_s
             ),
             active_waypoint_index: Some(self.active_index),
+            completed_waypoint_count,
             recovery_event: frame.drone.recovery_margin < 0.25,
         }
     }
@@ -563,12 +615,18 @@ impl RecoveryController {
             frame.drone.angular_velocity.y,
             0.24,
         );
-        let yaw = attitude_hold(
+        let yaw = heading_hold(
             0.0,
             frame.drone.euler.z,
             frame.drone.angular_velocity.z,
             0.1,
         );
+
+        let recovery_event = !frame.sensors.gps_valid
+            || !frame.sensors.altimeter_valid
+            || frame.drone.closest_obstacle_distance < 5.0
+            || frame.drone.collision
+            || frame.drone.recovery_margin < 0.35;
 
         let mut notes = Vec::new();
         if !frame.sensors.gps_valid {
@@ -591,7 +649,8 @@ impl RecoveryController {
             rotor_command: mix_rotors(thrust, roll, pitch, yaw),
             status_text: format!("Recovery mode: {}", notes.join(", ")),
             active_waypoint_index: None,
-            recovery_event: true,
+            completed_waypoint_count: 0,
+            recovery_event,
         }
     }
 }
@@ -682,6 +741,10 @@ fn attitude_hold(target: f64, angle: f64, rate: f64, gain: f64) -> f64 {
     clamp((target - angle) * gain - rate * 0.03, -0.18, 0.18)
 }
 
+fn heading_hold(target: f64, angle: f64, rate: f64, gain: f64) -> f64 {
+    clamp(wrap_angle(target - angle) * gain - rate * 0.03, -0.18, 0.18)
+}
+
 fn mix_rotors(thrust: f64, roll: f64, pitch: f64, yaw: f64) -> [f64; 4] {
     [
         clamp(thrust - pitch - roll + yaw, 0.0, 1.0),
@@ -693,6 +756,10 @@ fn mix_rotors(thrust: f64, roll: f64, pitch: f64, yaw: f64) -> [f64; 4] {
 
 fn clamp(value: f64, low: f64, high: f64) -> f64 {
     value.max(low).min(high)
+}
+
+fn wrap_angle(angle: f64) -> f64 {
+    (angle + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI
 }
 
 fn sub(lhs: Vec3, rhs: Vec3) -> Vec3 {

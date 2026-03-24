@@ -60,10 +60,7 @@ fn set_player_input(
 }
 
 #[tauri::command]
-fn take_damage(
-    amount: f64,
-    service: tauri::State<'_, SimulationService>,
-) -> Result<(), String> {
+fn take_damage(amount: f64, service: tauri::State<'_, SimulationService>) -> Result<(), String> {
     service.take_damage(amount);
     Ok(())
 }

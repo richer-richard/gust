@@ -9,14 +9,38 @@ export function useSimulation(playerControlsEnabled: boolean) {
   useKeyboardControls(playerControlsEnabled);
 
   useEffect(() => {
-    void bootstrap();
+    let cancelled = false;
+    let timeoutId: number | null = null;
 
-    const interval = window.setInterval(() => {
-      void refreshSnapshot();
-    }, 120);
+    const schedulePoll = () => {
+      if (cancelled) {
+        return;
+      }
+      timeoutId = window.setTimeout(() => {
+        void pollSnapshot();
+      }, 120);
+    };
+
+    const pollSnapshot = async () => {
+      try {
+        await refreshSnapshot();
+      } finally {
+        schedulePoll();
+      }
+    };
+
+    const start = async () => {
+      await bootstrap();
+      schedulePoll();
+    };
+
+    void start();
 
     return () => {
-      window.clearInterval(interval);
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
   }, [bootstrap, refreshSnapshot]);
 }

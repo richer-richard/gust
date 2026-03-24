@@ -106,6 +106,7 @@ class Simulator {
   Vec3 last_world_accel_{};
   Vec3 last_gps_position_{0.0, 0.0, 25.0};
   Vec3 current_wind_{};
+  SensorPacket sensor_packet_{};
   std::array<double, 4> rotor_command_{0.62, 0.62, 0.62, 0.62};
   std::array<double, 4> rotor_rpm_{};
   bool collision_ = false;
@@ -117,4 +118,3 @@ class Simulator {
 };
 
 }  // namespace gust::sim
-

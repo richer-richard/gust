@@ -132,6 +132,16 @@ double sphere_to_box_distance(const Vec3 &center, const Obstacle &obstacle) {
   return length(center - closest) - kDroneRadius;
 }
 
+double wrap_angle(double angle) {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kTwoPi = 2.0 * kPi;
+  angle = std::fmod(angle + kPi, kTwoPi);
+  if (angle < 0.0) {
+    angle += kTwoPi;
+  }
+  return angle - kPi;
+}
+
 }  // namespace
 
 Simulator::Simulator(Scenario scenario) {
@@ -157,6 +167,7 @@ void Simulator::reset(Scenario scenario) {
   gust_strength_ = 0.0;
   turbulence_index_ = 0.0;
   health_ = 1.0;
+  sensor_packet_ = build_sensor_packet(last_world_accel_);
 }
 
 void Simulator::set_rotor_command(const std::array<double, 4> &command) {
@@ -228,6 +239,7 @@ void Simulator::step(double dt) {
   euler_ += euler_rate_from_body_rate(euler_, angular_velocity_) * dt;
   euler_.x = std::clamp(euler_.x, -1.1, 1.1);
   euler_.y = std::clamp(euler_.y, -1.1, 1.1);
+  euler_.z = wrap_angle(euler_.z);
 
   const auto thrust_world = rotate_body_to_world(make_vec(0.0, 0.0, total_thrust), euler_);
   const auto gravity = make_vec(0.0, 0.0, -kGravity);
@@ -244,6 +256,7 @@ void Simulator::step(double dt) {
     last_world_accel_ = {};
     resolve_collisions();
     update_recovery_margin();
+    sensor_packet_ = build_sensor_packet(last_world_accel_);
     return;
   }
 
@@ -253,6 +266,7 @@ void Simulator::step(double dt) {
 
   resolve_collisions();
   update_recovery_margin();
+  sensor_packet_ = build_sensor_packet(last_world_accel_);
 }
 
 void Simulator::resolve_collisions() {
@@ -382,7 +396,7 @@ StateFrame Simulator::snapshot() const {
   frame.environment.turbulence_index = turbulence_index_;
   frame.obstacles = scenario_.obstacles;
   frame.waypoints = scenario_.waypoints;
-  frame.sensors = const_cast<Simulator *>(this)->build_sensor_packet(last_world_accel_);
+  frame.sensors = sensor_packet_;
   return frame;
 }
 
