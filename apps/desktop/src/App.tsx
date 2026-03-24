@@ -15,6 +15,7 @@ type SessionStage = 'landing' | 'launching' | 'active';
 
 export default function App() {
   const snapshot = useSimulationStore((s) => s.snapshot);
+  const worldLayout = useSimulationStore((s) => s.worldLayout);
   const scenarios = useSimulationStore((s) => s.scenarios);
   const evaluation = useSimulationStore((s) => s.evaluation);
   const isEvaluating = useSimulationStore((s) => s.isEvaluating);
@@ -42,6 +43,7 @@ export default function App() {
   const assistLevel = (snapshot?.assistLevel ?? 'intent_assist') as AssistLevel;
   const sessionIsActive = sessionStage === 'active';
   const showScenarioVisuals = sessionIsActive && snapshot?.activeScenarioId !== 'city_flyover';
+  const sceneReady = Boolean(snapshot && worldLayout);
 
   const ignoreCommandError = (promise: Promise<void>) => {
     void promise.catch(() => {});
@@ -91,9 +93,10 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="viewport-container">
-        {snapshot ? (
+        {snapshot && worldLayout ? (
           <CityScene
             snapshot={deferredSnapshot}
+            worldLayout={worldLayout}
             cameraMode={cameraMode}
             theme={theme}
             previewMode={!sessionIsActive}
@@ -107,7 +110,7 @@ export default function App() {
       <div className="overlay">
         {error && <div className="error-banner">{error}</div>}
 
-        {!snapshot && (
+        {!sceneReady && (
           <div className="loading-overlay">
             <div className="loading-logo">GUST</div>
             <div className="loading-text">Booting the flyover scene</div>
@@ -117,7 +120,7 @@ export default function App() {
           </div>
         )}
 
-        {snapshot && sessionStage === 'landing' && (
+        {snapshot && worldLayout && sessionStage === 'landing' && (
           <LandingOverlay
             selectedThemeId={selectedThemeId}
             themeOptions={THEME_OPTIONS}

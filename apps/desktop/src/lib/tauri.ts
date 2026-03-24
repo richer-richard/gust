@@ -7,6 +7,7 @@ import type {
   RunState,
   ScenarioSummary,
   SimulationSnapshot,
+  WorldLayout,
 } from "./types";
 
 export async function getSnapshot(): Promise<SimulationSnapshot> {
@@ -15,6 +16,10 @@ export async function getSnapshot(): Promise<SimulationSnapshot> {
 
 export async function listScenarios(): Promise<ScenarioSummary[]> {
   return invoke<ScenarioSummary[]>("list_scenarios");
+}
+
+export async function getWorldLayout(): Promise<WorldLayout> {
+  return invoke<WorldLayout>("get_world_layout");
 }
 
 export async function setRunState(runState: RunState): Promise<SimulationSnapshot> {

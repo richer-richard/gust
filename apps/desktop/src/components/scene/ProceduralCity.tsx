@@ -1,46 +1,37 @@
 /**
- * ProceduralCity - GPU-efficient city using a prebaked window texture atlas.
- *
- * Instead of computing window grids per-pixel with trig hashes (expensive),
- * we prebake a 2048×2048 Canvas atlas with 6 lit-percentage bands.
- * Each building samples a unique region via per-instance UV attributes.
- * Inspired by git-city's InstancedBuildings approach.
+ * ProceduralCity - Renders the backend-authored world layout with instanced towers.
  */
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { generateCity } from '../../lib/cityGenerator';
 import type { SceneTheme } from '../../lib/theme';
+import type { WorldBuilding, WorldLayout } from '../../lib/types';
 
-// ─── Atlas Constants ───────────────────────────────────────────
 const ATLAS_SIZE = 2048;
-const ATLAS_CELL = 8; // 6px window + 2px gap
-const ATLAS_COLS = ATLAS_SIZE / ATLAS_CELL; // 256
-const ATLAS_BAND_ROWS = 42; // rows per lit-percentage band
-const ATLAS_LIT_PCTS = [0.20, 0.35, 0.50, 0.65, 0.80, 0.95];
+const ATLAS_CELL = 8;
+const ATLAS_COLS = ATLAS_SIZE / ATLAS_CELL;
+const ATLAS_BAND_ROWS = 42;
+const ATLAS_LIT_PCTS = [0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
 const WINDOW_PX = 6;
 
-/**
- * Create the window texture atlas.
- * 6 horizontal bands, each 42 rows of 256 window cells.
- * Uses Uint32Array direct pixel writes for speed (10-50x faster than fillRect).
- */
 function createWindowAtlas(theme: SceneTheme): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = ATLAS_SIZE;
   canvas.height = ATLAS_SIZE;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('failed to create city atlas canvas context');
+  }
 
   const imageData = ctx.createImageData(ATLAS_SIZE, ATLAS_SIZE);
   const buf32 = new Uint32Array(imageData.data.buffer);
 
-  // Parse hex to ABGR uint32 (little-endian)
   const hexToABGR = (hex: string): number => {
-    const c = new THREE.Color(hex);
+    const color = new THREE.Color(hex);
     return (
       (255 << 24) |
-      (Math.round(c.b * 255) << 16) |
-      (Math.round(c.g * 255) << 8) |
-      Math.round(c.r * 255)
+      (Math.round(color.b * 255) << 16) |
+      (Math.round(color.g * 255) << 8) |
+      Math.round(color.r * 255)
     );
   };
 
@@ -48,33 +39,30 @@ function createWindowAtlas(theme: SceneTheme): THREE.CanvasTexture {
   const offABGR = hexToABGR(theme.city.windowOff);
   const litABGRs = theme.city.windowLitColors.map(hexToABGR);
 
-  // Fill background with face color
   buf32.fill(faceABGR);
 
-  // Seeded PRNG for deterministic atlas
-  let s = 42;
+  let seed = 42;
   const rand = () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
   };
 
-  for (let band = 0; band < ATLAS_LIT_PCTS.length; band++) {
+  for (let band = 0; band < ATLAS_LIT_PCTS.length; band += 1) {
     const litPct = ATLAS_LIT_PCTS[band];
     const bandStartRow = band * ATLAS_BAND_ROWS;
 
-    for (let r = 0; r < ATLAS_BAND_ROWS; r++) {
-      const rowY = (bandStartRow + r) * ATLAS_CELL;
-      for (let c = 0; c < ATLAS_COLS; c++) {
-        const px = c * ATLAS_CELL;
+    for (let row = 0; row < ATLAS_BAND_ROWS; row += 1) {
+      const rowY = (bandStartRow + row) * ATLAS_CELL;
+      for (let col = 0; col < ATLAS_COLS; col += 1) {
+        const px = col * ATLAS_CELL;
         const abgr =
           rand() < litPct
             ? litABGRs[Math.floor(rand() * litABGRs.length)]
             : offABGR;
 
-        // Write WINDOW_PX × WINDOW_PX pixel block
-        for (let dy = 0; dy < WINDOW_PX; dy++) {
+        for (let dy = 0; dy < WINDOW_PX; dy += 1) {
           const rowOffset = (rowY + dy) * ATLAS_SIZE + px;
-          for (let dx = 0; dx < WINDOW_PX; dx++) {
+          for (let dx = 0; dx < WINDOW_PX; dx += 1) {
             buf32[rowOffset + dx] = abgr;
           }
         }
@@ -84,26 +72,24 @@ function createWindowAtlas(theme: SceneTheme): THREE.CanvasTexture {
 
   ctx.putImageData(imageData, 0, 0);
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.flipY = false;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.flipY = false;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
-// ─── Building Shader (atlas-based) ────────────────────────────
 const buildingVertexShader = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vNormal;
   varying vec3 vWorldPosition;
 
-  // Per-instance attributes
   attribute vec3 instanceColorAttr;
-  attribute vec4 aUvFront;   // offset.xy + repeat.zw for front/back faces
-  attribute vec4 aUvSide;    // offset.xy + repeat.zw for left/right faces
+  attribute vec4 aUvFront;
+  attribute vec4 aUvSide;
 
   varying vec3 vBuildingColor;
   varying vec4 vUvFront;
@@ -138,53 +124,43 @@ const buildingFragmentShader = /* glsl */ `
   varying vec4 vUvSide;
 
   void main() {
-    vec3 absN = abs(vNormal);
-    float isRoof = step(0.5, absN.y);
-
-    // Roof — slightly different shade, simple lighting
-    if (isRoof > 0.5) {
+    if (vNormal.y > 0.5) {
       vec3 roofColor = vBuildingColor * 0.76 + vec3(uRoofWarmth);
       float diffuse = max(dot(vNormal, normalize(vec3(0.5, 0.8, 0.3))), 0.0);
       vec3 lit = roofColor * (0.3 + 0.7 * diffuse);
-
-      // Fog
       float dist = length(vWorldPosition - cameraPosition);
       float fogFactor = smoothstep(uFogNear, uFogFar, dist);
-      lit = mix(lit, uFogColor, fogFactor);
-
-      gl_FragColor = vec4(lit, 1.0);
+      gl_FragColor = vec4(mix(lit, uFogColor, fogFactor), 1.0);
       return;
     }
 
-    // Wall faces — sample atlas texture
-    // Choose UV params based on face direction
+    if (vNormal.y < -0.5) {
+      vec3 undersideColor = vBuildingColor * 0.2;
+      float dist = length(vWorldPosition - cameraPosition);
+      float fogFactor = smoothstep(uFogNear, uFogFar, dist);
+      gl_FragColor = vec4(mix(undersideColor, uFogColor, fogFactor), 1.0);
+      return;
+    }
+
+    vec3 absN = abs(vNormal);
     bool isFrontBack = absN.z > absN.x;
     vec4 uvParams = isFrontBack ? vUvFront : vUvSide;
-
-    // Sample atlas at the per-instance UV region
     vec2 atlasUv = uvParams.xy + vUv * uvParams.zw;
     vec3 windowColor = texture2D(uAtlas, atlasUv).rgb;
 
-    // Emissive glow for lit windows
     float windowBrightness = dot(windowColor, vec3(0.299, 0.587, 0.114));
     float isLitWindow = step(0.15, windowBrightness);
 
-    // Wall color with simple lighting
     float diffuse = max(dot(vNormal, normalize(vec3(0.5, 0.8, 0.3))), 0.0);
-    vec3 wallColor = vBuildingColor * (0.3 + 0.7 * diffuse);
+    vec3 wallColor = vBuildingColor * (0.32 + 0.68 * diffuse);
 
-    // AO at building base
     float ao = smoothstep(0.0, 8.0, vWorldPosition.y);
     wallColor *= (0.5 + 0.5 * ao);
 
-    // Composite: dark face pixels show building color, lit pixels show window light
     float isFacePixel = 1.0 - step(0.08, length(windowColor - uFaceReference));
     vec3 finalColor = mix(windowColor, wallColor, isFacePixel);
-
-    // Window emissive boost for bloom
     finalColor += windowColor * isLitWindow * uWindowEmissive;
 
-    // Distance fog
     float dist = length(vWorldPosition - cameraPosition);
     float fogFactor = smoothstep(uFogNear, uFogFar, dist);
     finalColor = mix(finalColor, uFogColor, fogFactor);
@@ -193,7 +169,6 @@ const buildingFragmentShader = /* glsl */ `
   }
 `;
 
-// ─── Ground Shader ────────────────────────────────────────────
 const groundVertexShader = /* glsl */ `
   varying vec2 vWorldXZ;
   varying float vDist;
@@ -216,9 +191,6 @@ const groundFragmentShader = /* glsl */ `
   uniform vec3 uSidewalkColor;
   uniform vec3 uLineColor;
   uniform vec3 uParkColor;
-  uniform float uPlazaHalfExtent;
-  uniform vec3 uPlazaColor;
-  uniform vec3 uPlazaAccent;
   uniform vec3 uFogColor;
   uniform float uFogNear;
   uniform float uFogFar;
@@ -231,7 +203,6 @@ const groundFragmentShader = /* glsl */ `
     float roadZ = step(cellPos.y, uRoadWidth) + step(cellSize - uRoadWidth, cellPos.y);
     float isRoad = min(1.0, roadX + roadZ);
 
-    // Road markings
     float isCenterLine = 0.0;
     if (isRoad > 0.5) {
       if (roadX > 0.5) {
@@ -262,125 +233,91 @@ const groundFragmentShader = /* glsl */ `
       color = uSidewalkColor;
     }
 
-    float plazaDistance = max(abs(vWorldXZ.x), abs(vWorldXZ.y));
-    float plazaMask = 1.0 - step(uPlazaHalfExtent, plazaDistance);
-    float plazaEdge = 1.0 - smoothstep(uPlazaHalfExtent - 8.0, uPlazaHalfExtent + 8.0, plazaDistance);
-    float stonePattern =
-      0.5 + 0.5 * sin(vWorldXZ.x * 0.08) * sin(vWorldXZ.y * 0.08);
-    vec3 plazaColor = mix(
-      uPlazaColor,
-      uPlazaAccent,
-      stonePattern * 0.12 + plazaEdge * 0.32
-    );
-    color = mix(color, plazaColor, plazaMask);
-
     float fogFactor = smoothstep(uFogNear, uFogFar, vDist);
     color = mix(color, uFogColor, fogFactor);
-
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
 interface ProceduralCityProps {
   theme: SceneTheme;
+  worldLayout: WorldLayout;
 }
 
-// ─── Component ────────────────────────────────────────────────
-export function ProceduralCity({ theme }: ProceduralCityProps) {
+export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-
-  const cityData = useMemo(() => generateCity(42), []);
-
-  // Create the window texture atlas (once)
+  const buildings = useMemo(() => worldLayout.buildings, [worldLayout.buildings]);
   const atlasTexture = useMemo(() => createWindowAtlas(theme), [theme]);
 
-  // Dispose atlas on unmount
   useEffect(() => {
     return () => atlasTexture.dispose();
   }, [atlasTexture]);
 
-  // Create instanced geometry with per-instance attributes
   const { geometry, count } = useMemo(() => {
-    const buildings = cityData.buildings;
     const count = buildings.length;
     const geo = new THREE.BoxGeometry(1, 1, 1);
-
-    // Per-instance data buffers
     const colors = new Float32Array(count * 3);
-    const uvFront = new Float32Array(count * 4); // offset.xy + repeat.zw
+    const uvFront = new Float32Array(count * 4);
     const uvSide = new Float32Array(count * 4);
 
-    for (let i = 0; i < count; i++) {
-      const b = buildings[i];
+    for (let index = 0; index < count; index += 1) {
+      const building = buildings[index];
+      const collider = building.collider;
 
-      // Colors
-      colors[i * 3] = b.colorR;
-      colors[i * 3 + 1] = b.colorG;
-      colors[i * 3 + 2] = b.colorB;
+      colors[index * 3] = building.colorR;
+      colors[index * 3 + 1] = building.colorG;
+      colors[index * 3 + 2] = building.colorB;
 
-      // Determine atlas band from lit percentage
       const bandIndex = Math.min(
         ATLAS_LIT_PCTS.length - 1,
-        Math.max(0, Math.round(b.litPercentage * (ATLAS_LIT_PCTS.length - 1)))
+        Math.max(0, Math.round(building.litPercentage * (ATLAS_LIT_PCTS.length - 1))),
       );
       const bandRowOffset = bandIndex * ATLAS_BAND_ROWS;
-
-      // Unique seed for column offset (deterministic per building)
       const seed =
-        b.windowSeed * 137 +
-        Math.floor(b.x * 7) +
-        Math.floor(b.z * 13);
+        building.windowSeed * 137 +
+        Math.floor(collider.center.x * 7) +
+        Math.floor(collider.center.y * 13);
 
-      // Front face UV — sample windowsPerFloor columns × floors rows
       const frontColStart = Math.abs(
-        Math.floor(seed) % Math.max(1, ATLAS_COLS - b.windowsPerFloor)
+        Math.floor(seed) % Math.max(1, ATLAS_COLS - building.windowsPerFloor),
       );
-      uvFront[i * 4 + 0] = frontColStart / ATLAS_COLS; // offset.x
-      uvFront[i * 4 + 1] = bandRowOffset / ATLAS_COLS; // offset.y
-      uvFront[i * 4 + 2] = b.windowsPerFloor / ATLAS_COLS; // repeat.x
-      uvFront[i * 4 + 3] = b.floors / ATLAS_COLS; // repeat.y
+      uvFront[index * 4 + 0] = frontColStart / ATLAS_COLS;
+      uvFront[index * 4 + 1] = bandRowOffset / ATLAS_COLS;
+      uvFront[index * 4 + 2] = building.windowsPerFloor / ATLAS_COLS;
+      uvFront[index * 4 + 3] = building.floors / ATLAS_COLS;
 
-      // Side face UV — different column start for visual variety
       const sideColStart = Math.abs(
-        Math.floor(seed + 7919) %
-          Math.max(1, ATLAS_COLS - b.sideWindowsPerFloor)
+        Math.floor(seed + 7919) % Math.max(1, ATLAS_COLS - building.sideWindowsPerFloor),
       );
-      uvSide[i * 4 + 0] = sideColStart / ATLAS_COLS;
-      uvSide[i * 4 + 1] = bandRowOffset / ATLAS_COLS;
-      uvSide[i * 4 + 2] = b.sideWindowsPerFloor / ATLAS_COLS;
-      uvSide[i * 4 + 3] = b.floors / ATLAS_COLS;
+      uvSide[index * 4 + 0] = sideColStart / ATLAS_COLS;
+      uvSide[index * 4 + 1] = bandRowOffset / ATLAS_COLS;
+      uvSide[index * 4 + 2] = building.sideWindowsPerFloor / ATLAS_COLS;
+      uvSide[index * 4 + 3] = building.floors / ATLAS_COLS;
     }
 
-    geo.setAttribute(
-      'instanceColorAttr',
-      new THREE.InstancedBufferAttribute(colors, 3)
-    );
-    geo.setAttribute(
-      'aUvFront',
-      new THREE.InstancedBufferAttribute(uvFront, 4)
-    );
-    geo.setAttribute(
-      'aUvSide',
-      new THREE.InstancedBufferAttribute(uvSide, 4)
-    );
+    geo.setAttribute('instanceColorAttr', new THREE.InstancedBufferAttribute(colors, 3));
+    geo.setAttribute('aUvFront', new THREE.InstancedBufferAttribute(uvFront, 4));
+    geo.setAttribute('aUvSide', new THREE.InstancedBufferAttribute(uvSide, 4));
 
     return { geometry: geo, count };
-  }, [cityData]);
+  }, [buildings]);
 
-  // Set instance transforms
   useEffect(() => {
-    if (!meshRef.current) return;
+    if (!meshRef.current) {
+      return;
+    }
+
     const dummy = new THREE.Object3D();
-    cityData.buildings.forEach((b, i) => {
-      dummy.position.set(b.x, b.height / 2, b.z);
-      dummy.scale.set(b.width, b.height, b.depth);
+    buildings.forEach((building: WorldBuilding, index) => {
+      const collider = building.collider;
+      dummy.position.set(collider.center.x, collider.center.z, -collider.center.y);
+      dummy.scale.set(collider.size.x, collider.size.z, collider.size.y);
       dummy.updateMatrix();
-      meshRef.current!.setMatrixAt(i, dummy.matrix);
+      meshRef.current?.setMatrixAt(index, dummy.matrix);
     });
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [cityData]);
+  }, [buildings]);
 
-  // Building material with atlas
   const buildingMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -396,49 +333,93 @@ export function ProceduralCity({ theme }: ProceduralCityProps) {
           uWindowEmissive: { value: theme.city.windowEmissive },
         },
       }),
-    [atlasTexture, theme]
+    [atlasTexture, theme],
   );
 
-  // Ground material — use average standard road width since variable roads
   const groundMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: groundVertexShader,
         fragmentShader: groundFragmentShader,
         uniforms: {
-          uBlockSize: { value: cityData.blockSize },
-          uRoadWidth: { value: cityData.roadWidth },
+          uBlockSize: { value: worldLayout.blockSize },
+          uRoadWidth: { value: worldLayout.roadWidth },
           uRoadColor: { value: new THREE.Color(theme.city.groundRoad) },
           uSidewalkColor: { value: new THREE.Color(theme.city.groundSidewalk) },
           uLineColor: { value: new THREE.Color(theme.city.groundLine) },
           uParkColor: { value: new THREE.Color(theme.city.groundPark) },
-          uPlazaHalfExtent: { value: cityData.plazaHalfExtent },
-          uPlazaColor: { value: new THREE.Color(theme.city.groundPlaza) },
-          uPlazaAccent: { value: new THREE.Color(theme.city.groundPlazaAccent) },
           uFogColor: { value: new THREE.Color(theme.city.fogColor) },
           uFogNear: { value: theme.city.fogNear },
           uFogFar: { value: theme.city.fogFar },
         },
       }),
-    [cityData, theme]
+    [theme, worldLayout.blockSize, worldLayout.roadWidth],
   );
+
+  const plazaTop = worldLayout.plaza.center.z + worldLayout.plaza.size.z * 0.5;
 
   return (
     <group>
-      {/* Ground plane — covers 4km city */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.05, 0]}
         material={groundMaterial}
+        receiveShadow
       >
-        <planeGeometry args={[cityData.gridSize + 800, cityData.gridSize + 800, 1, 1]} />
+        <planeGeometry args={[worldLayout.gridSize + 900, worldLayout.gridSize + 900, 1, 1]} />
       </mesh>
 
-      {/* Buildings — single draw call via InstancedMesh */}
+      <mesh
+        position={[
+          worldLayout.plaza.center.x,
+          worldLayout.plaza.center.z,
+          -worldLayout.plaza.center.y,
+        ]}
+        castShadow
+        receiveShadow
+      >
+        <boxGeometry
+          args={[
+            worldLayout.plaza.size.x,
+            worldLayout.plaza.size.z,
+            worldLayout.plaza.size.y,
+          ]}
+        />
+        <meshStandardMaterial
+          color={theme.city.groundPlaza}
+          emissive={theme.city.groundPlazaAccent}
+          emissiveIntensity={0.03}
+          roughness={0.9}
+          metalness={0.04}
+        />
+      </mesh>
+
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, plazaTop + 0.03, 0]}
+        receiveShadow
+      >
+        <planeGeometry
+          args={[
+            worldLayout.plaza.size.x - 10,
+            worldLayout.plaza.size.y - 10,
+            1,
+            1,
+          ]}
+        />
+        <meshStandardMaterial
+          color={theme.city.groundPlazaAccent}
+          roughness={0.92}
+          metalness={0.02}
+        />
+      </mesh>
+
       <instancedMesh
         ref={meshRef}
         args={[geometry, buildingMaterial, count]}
         frustumCulled={false}
+        castShadow
+        receiveShadow
       />
     </group>
   );

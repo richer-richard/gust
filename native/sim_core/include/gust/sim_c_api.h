@@ -7,7 +7,6 @@
 extern "C" {
 #endif
 
-#define GUST_MAX_OBSTACLES 16
 #define GUST_MAX_WAYPOINTS 16
 
 typedef struct GustVec3 {
@@ -38,10 +37,11 @@ typedef struct GustScenarioConfig {
   double gust_cell_size;
   double duration_s;
   GustFaultProfile faults;
+  GustVec3 start_position;
   uint32_t obstacle_count;
-  GustObstacleBox obstacles[GUST_MAX_OBSTACLES];
+  const GustObstacleBox *obstacles;
   uint32_t waypoint_count;
-  GustWaypoint waypoints[GUST_MAX_WAYPOINTS];
+  const GustWaypoint *waypoints;
 } GustScenarioConfig;
 
 typedef struct GustRotorCommand {
@@ -66,6 +66,7 @@ typedef struct GustDroneFrame {
   uint32_t collision;
   double closest_obstacle_distance;
   double recovery_margin;
+  double clearance_agl;
   double health;
 } GustDroneFrame;
 
@@ -81,8 +82,6 @@ typedef struct GustStateFrame {
   GustDroneFrame drone;
   GustSensorPacket sensors;
   GustEnvironmentFrame environment;
-  uint32_t obstacle_count;
-  GustObstacleBox obstacles[GUST_MAX_OBSTACLES];
   uint32_t waypoint_count;
   GustWaypoint waypoints[GUST_MAX_WAYPOINTS];
 } GustStateFrame;
@@ -102,4 +101,3 @@ GustStateFrame gust_sim_get_frame(const GustSimHandle *handle);
 #endif
 
 #endif
-

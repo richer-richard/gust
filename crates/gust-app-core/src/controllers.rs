@@ -151,11 +151,7 @@ impl PlayerController {
         _scenario: &ScenarioConfig,
     ) -> ControllerOutput {
         let input = self.input;
-        let altitude = if frame.sensors.altimeter_valid {
-            frame.sensors.altimeter_altitude
-        } else {
-            frame.drone.position.z
-        };
+        let altitude = clearance_altitude(frame);
 
         if !self.motors_armed {
             let climb_intent = input.throttle.max(0.0);
@@ -223,7 +219,7 @@ impl PlayerController {
                     status_text: format!(
                         "Player Manual | HP {:.0}% | alt {:.1}m",
                         frame.drone.health * 100.0,
-                        frame.drone.position.z
+                        altitude
                     ),
                     active_waypoint_index: None,
                     completed_waypoint_count: 0,
@@ -323,7 +319,7 @@ impl PlayerController {
                     status_text: format!(
                         "Player Stabilized | HP {:.0}% | alt {:.1}m",
                         frame.drone.health * 100.0,
-                        frame.drone.position.z
+                        altitude
                     ),
                     active_waypoint_index: None,
                     completed_waypoint_count: 0,
@@ -340,14 +336,9 @@ impl PlayerController {
                 let thrust = if throttle_deadzone {
                     // Update and maintain hold altitude
                     if self.hold_altitude < 0.5 {
-                        self.hold_altitude = frame.drone.position.z;
+                        self.hold_altitude = altitude;
                     }
-                    altitude_hold(
-                        self.hold_altitude,
-                        frame.drone.position.z,
-                        frame.drone.velocity.z,
-                        0.25,
-                    )
+                    altitude_hold(self.hold_altitude, altitude, frame.drone.velocity.z, 0.25)
                 } else {
                     self.hold_altitude = 0.0; // release hold
                     clamp(HOVER_THROTTLE + input.throttle * 0.38, 0.0, 1.0)
@@ -377,7 +368,7 @@ impl PlayerController {
                     status_text: format!(
                         "Player Cruise | HP {:.0}% | alt {:.1}m",
                         frame.drone.health * 100.0,
-                        frame.drone.position.z
+                        altitude
                     ),
                     active_waypoint_index: None,
                     completed_waypoint_count: 0,
@@ -392,13 +383,8 @@ impl PlayerController {
             return;
         }
 
-        let altitude = if frame.sensors.altimeter_valid {
-            frame.sensors.altimeter_altitude
-        } else {
-            frame.drone.position.z
-        };
-        let airborne =
-            altitude > 0.5 || frame.drone.position.z > 0.5 || frame.drone.velocity.z.abs() > 0.5;
+        let altitude = clearance_altitude(frame);
+        let airborne = altitude > 0.5 || frame.drone.velocity.z.abs() > 0.5;
 
         if airborne {
             self.motors_armed = true;
@@ -426,14 +412,10 @@ impl StabilizeController {
         _scenario: &ScenarioConfig,
     ) -> ControllerOutput {
         if self.hold_altitude_m <= 0.1 {
-            self.hold_altitude_m = frame.drone.position.z.max(20.0);
+            self.hold_altitude_m = clearance_altitude(frame).max(20.0);
         }
 
-        let altitude = if frame.sensors.altimeter_valid {
-            frame.sensors.altimeter_altitude
-        } else {
-            frame.drone.position.z
-        };
+        let altitude = clearance_altitude(frame);
         let thrust = altitude_hold(self.hold_altitude_m, altitude, frame.drone.velocity.z, 0.25);
         let roll = attitude_hold(
             0.0,
@@ -526,11 +508,7 @@ impl WaypointController {
             0.32,
         );
         let desired_yaw = clamp(active_error.y.atan2(active_error.x), -0.8, 0.8);
-        let altitude = if frame.sensors.altimeter_valid {
-            frame.sensors.altimeter_altitude
-        } else {
-            frame.drone.position.z
-        };
+        let altitude = clearance_altitude(frame);
         let thrust = altitude_hold(active.position.z, altitude, frame.drone.velocity.z, 0.22);
         let roll = attitude_hold(
             desired_roll,
@@ -591,11 +569,7 @@ impl RecoveryController {
         frame: &NativeFrame,
         _scenario: &ScenarioConfig,
     ) -> ControllerOutput {
-        let altitude = if frame.sensors.altimeter_valid {
-            frame.sensors.altimeter_altitude
-        } else {
-            frame.drone.position.z
-        };
+        let altitude = clearance_altitude(frame);
         let fallback_altitude = if frame.drone.collision {
             self.target_altitude_m + 0.4
         } else {
@@ -735,6 +709,14 @@ fn altitude_hold(target_altitude: f64, altitude: f64, vertical_velocity: f64, ga
         0.28,
         0.9,
     )
+}
+
+fn clearance_altitude(frame: &NativeFrame) -> f64 {
+    if frame.sensors.altimeter_valid {
+        frame.sensors.altimeter_altitude
+    } else {
+        frame.drone.clearance_agl
+    }
 }
 
 fn attitude_hold(target: f64, angle: f64, rate: f64, gain: f64) -> f64 {

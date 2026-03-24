@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   activateScenario,
+  getWorldLayout,
   getSnapshot,
   listScenarios,
   runQuickEvaluation,
@@ -15,10 +16,12 @@ import type {
   RunState,
   ScenarioSummary,
   SimulationSnapshot,
+  WorldLayout,
 } from "./types";
 
 interface SimulationStore {
   snapshot: SimulationSnapshot | null;
+  worldLayout: WorldLayout | null;
   scenarios: ScenarioSummary[];
   evaluation: EvaluationReport | null;
   isEvaluating: boolean;
@@ -51,18 +54,20 @@ export const useSimulationStore = create<SimulationStore>((set) => {
 
   return {
     snapshot: null,
+    worldLayout: null,
     scenarios: [],
     evaluation: null,
     isEvaluating: false,
     error: null,
     async bootstrap() {
       try {
-        const [snapshot, scenarios] = await Promise.all([
+        const [snapshot, scenarios, worldLayout] = await Promise.all([
           getSnapshot(),
           listScenarios(),
+          getWorldLayout(),
         ]);
         snapshotWriteVersion += 1;
-        set({ snapshot, scenarios, error: null });
+        set({ snapshot, worldLayout, scenarios, error: null });
       } catch (error) {
         set({ error: stringifyError(error) });
       }
@@ -127,7 +132,9 @@ export const useSimulationStore = create<SimulationStore>((set) => {
     async activateScenario(scenarioId) {
       try {
         const snapshot = await activateScenario(scenarioId);
-        commitSnapshot(snapshot);
+        const worldLayout = await getWorldLayout();
+        snapshotWriteVersion += 1;
+        set({ snapshot, worldLayout, error: null });
       } catch (error) {
         set({ error: stringifyError(error) });
         throw toThrownError(error);

@@ -56,6 +56,7 @@ export interface DroneTelemetry {
   collision: boolean;
   closestObstacleDistance: number;
   recoveryMargin: number;
+  clearanceAgl: number;
   health: number;
 }
 
@@ -114,4 +115,28 @@ export interface PlayerInput {
   roll: number;
   yaw: number;
   throttle: number;
+}
+
+export interface WorldBuilding {
+  collider: ObstacleBox;
+  colorR: number;
+  colorG: number;
+  colorB: number;
+  windowSeed: number;
+  floors: number;
+  windowsPerFloor: number;
+  sideWindowsPerFloor: number;
+  litPercentage: number;
+}
+
+export interface WorldLayout {
+  seed: number;
+  gridSize: number;
+  blockSize: number;
+  roadWidth: number;
+  plazaHalfExtent: number;
+  plaza: ObstacleBox;
+  spawnPosition: Vec3;
+  previewYaw: number;
+  buildings: WorldBuilding[];
 }

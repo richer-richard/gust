@@ -3,7 +3,7 @@
 use gust_app_core::SimulationService;
 use gust_types::{
     AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioSummary,
-    SimulationSnapshot,
+    SimulationSnapshot, WorldLayout,
 };
 use tauri::Manager;
 
@@ -19,6 +19,11 @@ fn list_scenarios(
     service: tauri::State<'_, SimulationService>,
 ) -> Result<Vec<ScenarioSummary>, String> {
     Ok(service.list_scenarios())
+}
+
+#[tauri::command]
+fn get_world_layout(service: tauri::State<'_, SimulationService>) -> Result<WorldLayout, String> {
+    Ok(service.get_world_layout())
 }
 
 #[tauri::command]
@@ -94,6 +99,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             list_scenarios,
+            get_world_layout,
             set_run_state,
             set_controller_mode,
             activate_scenario,
