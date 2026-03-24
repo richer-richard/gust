@@ -5,6 +5,7 @@ use gust_types::{
     AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioSummary,
     SimulationSnapshot,
 };
+use tauri::Manager;
 
 #[tauri::command]
 fn get_snapshot(
@@ -105,6 +106,11 @@ fn main() {
             // Create default native menu (macOS: Cmd+Q quit, Cmd+C/V copy/paste, etc.)
             let menu = tauri::menu::Menu::default(app.handle())?;
             app.set_menu(menu)?;
+
+            if let Some(window) = app.get_webview_window("main") {
+                window.maximize()?;
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

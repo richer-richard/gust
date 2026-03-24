@@ -61,7 +61,27 @@ export function useKeyboardControls(enabled: boolean) {
     void setPlayerInput(nextInput);
   }, []);
 
+  const shouldIgnoreEvent = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return true;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest('input, textarea, select, button, [contenteditable="true"]') ||
+        target.isContentEditable
+    );
+  };
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (shouldIgnoreEvent(e)) {
+      return;
+    }
+
     const axis = KEY_MAP[e.code];
     if (axis) {
       e.preventDefault();
@@ -71,6 +91,10 @@ export function useKeyboardControls(enabled: boolean) {
   }, [emitInput]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
+    if (shouldIgnoreEvent(e)) {
+      return;
+    }
+
     const axis = KEY_MAP[e.code];
     if (axis) {
       e.preventDefault();
