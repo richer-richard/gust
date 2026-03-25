@@ -1,9 +1,9 @@
 /**
- * CityScene - Main 3D viewport with a shared backend-authored city and chase camera.
+ * CityScene - Main 3D viewport with shared-world rendering and recoverable hybrid follow.
  */
 import { Suspense, useEffect, useMemo, useRef } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { ContactShadows, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { ProceduralCity } from './ProceduralCity';
 import { DroneModel } from './DroneModel';
@@ -17,9 +17,11 @@ import type { ObstacleBox, SimulationSnapshot, Vec3, WorldLayout } from '../../l
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const FOLLOW_DEFAULT_DISTANCE = 18;
 const FOLLOW_MIN_DISTANCE = 9;
-const FOLLOW_MAX_DISTANCE = 84;
-const ORBIT_DEFAULT_DISTANCE = 38;
-const PREVIEW_DISTANCE = 56;
+const FOLLOW_MAX_DISTANCE = 92;
+const ORBIT_DEFAULT_DISTANCE = 36;
+const LOST_DISTANCE_FOLLOW = 105;
+const LOST_DISTANCE_ORBIT = 180;
+const RECENTER_SETTLE_DISTANCE = 0.45;
 
 interface CitySceneProps {
   snapshot: SimulationSnapshot | null;
@@ -35,14 +37,17 @@ interface CitySceneProps {
 
 interface SurfaceQuery {
   heightAt: (x: number, y: number) => number;
+  isOccluded: (from: THREE.Vector3, to: THREE.Vector3) => boolean;
 }
 
 interface SurfaceFootprint {
+  id: number;
   minX: number;
   maxX: number;
   minY: number;
   maxY: number;
   topZ: number;
+  box: THREE.Box3;
 }
 
 export function CityScene({
@@ -70,7 +75,7 @@ export function CityScene({
         fov: 55,
         near: 0.1,
         far: 9000,
-        position: [48, 18, 28],
+        position: [46, 18, 28],
       }}
       style={{ width: '100%', height: '100%' }}
     >
@@ -81,6 +86,24 @@ export function CityScene({
         <DroneModel snapshot={snapshot} />
         <WindParticles snapshot={snapshot} />
         {showScenarioVisuals && <WaypointMarkers snapshot={snapshot} />}
+        <ContactShadows
+          position={[0, 0.06, 0]}
+          opacity={theme.shadows.contactOpacity}
+          scale={260}
+          blur={theme.shadows.contactBlur}
+          far={56}
+          resolution={1024}
+          color="#000000"
+        />
+        <ContactShadows
+          position={[0, worldLayout.launchSurfaceZ + 0.06, 0]}
+          opacity={theme.shadows.contactOpacity * 0.82}
+          scale={110}
+          blur={Math.max(1.0, theme.shadows.contactBlur * 0.8)}
+          far={30}
+          resolution={1024}
+          color="#000000"
+        />
         <CameraController
           snapshot={snapshot}
           worldLayout={worldLayout}
@@ -127,15 +150,14 @@ function CameraController({
     const yaw = -(snapshot?.drone.euler.z ?? worldLayout.previewYaw);
     return toThreeForwardFromYaw(yaw);
   }, [snapshot?.drone.euler.z, snapshot?.drone.velocity, worldLayout.previewYaw]);
-  const surfaceQuery = useMemo(() => createSurfaceQuery(worldLayout), [worldLayout]);
+  const worldQuery = useMemo(() => createSurfaceQuery(worldLayout), [worldLayout]);
 
   if (previewMode) {
     return (
       <PlazaPreviewCamera
         target={target}
         forward={previewForward}
-        surfaceQuery={surfaceQuery}
-        onDroneFramingChange={onDroneFramingChange}
+        worldQuery={worldQuery}
       />
     );
   }
@@ -144,25 +166,13 @@ function CameraController({
     return <TopDownCamera target={target} onDroneFramingChange={onDroneFramingChange} />;
   }
 
-  if (mode === 'orbit') {
-    return (
-      <OrbitFollowCamera
-        target={target}
-        forward={forward}
-        surfaceQuery={surfaceQuery}
-        interactive={interactiveCamera}
-        recenterSignal={recenterSignal}
-        onDroneFramingChange={onDroneFramingChange}
-      />
-    );
-  }
-
   return (
-    <FollowChaseCamera
+    <TrackingOrbitCamera
       target={target}
       forward={forward}
-      collision={snapshot?.drone.collision ?? false}
-      surfaceQuery={surfaceQuery}
+      worldQuery={worldQuery}
+      interactive={interactiveCamera}
+      mode={mode}
       recenterSignal={recenterSignal}
       onDroneFramingChange={onDroneFramingChange}
     />
@@ -172,158 +182,62 @@ function CameraController({
 function PlazaPreviewCamera({
   target,
   forward,
-  surfaceQuery,
-  onDroneFramingChange,
+  worldQuery,
 }: {
   target: THREE.Vector3;
   forward: THREE.Vector3;
-  surfaceQuery: SurfaceQuery;
-  onDroneFramingChange?: (lost: boolean) => void;
+  worldQuery: SurfaceQuery;
 }) {
   const smoothedLook = useRef(target.clone());
 
   useFrame(({ camera, clock }) => {
-    const angle = Math.sin(clock.elapsedTime * 0.08) * 0.12;
+    const angle = Math.sin(clock.elapsedTime * 0.08) * 0.1;
     const previewForward = forward.clone().applyAxisAngle(WORLD_UP, angle).normalize();
     const right = new THREE.Vector3().crossVectors(previewForward, WORLD_UP).normalize();
     const idealPosition = makeCameraPosition(
       target,
       previewForward,
-      PREVIEW_DISTANCE,
-      surfaceQuery,
-      18,
-      10,
-    ).addScaledVector(right, 8);
-    const lookTarget = makeLookTarget(target, previewForward, 30, 6);
+      52,
+      worldQuery,
+      14,
+      7,
+    ).addScaledVector(right, 5);
+    const lookTarget = makeLookTarget(target, previewForward, 26, 5.2);
 
     camera.position.lerp(idealPosition, 0.06);
     smoothedLook.current.lerp(lookTarget, 0.08);
     camera.lookAt(smoothedLook.current);
-    onDroneFramingChange?.(false);
   });
 
   return null;
 }
 
-function FollowChaseCamera({
+function TrackingOrbitCamera({
   target,
   forward,
-  collision,
-  surfaceQuery,
-  recenterSignal,
-  onDroneFramingChange,
-}: {
-  target: THREE.Vector3;
-  forward: THREE.Vector3;
-  collision: boolean;
-  surfaceQuery: SurfaceQuery;
-  recenterSignal: number;
-  onDroneFramingChange?: (lost: boolean) => void;
-}) {
-  const gl = useThree((state) => state.gl);
-  const desiredDistance = useRef(FOLLOW_DEFAULT_DISTANCE);
-  const currentDistance = useRef(FOLLOW_DEFAULT_DISTANCE);
-  const smoothedTarget = useRef(target.clone());
-  const smoothedLook = useRef(target.clone());
-  const smoothedForward = useRef(forward.clone());
-  const initialized = useRef(false);
-  const shakeRef = useRef(0);
-  const lastHandledRecenter = useRef(recenterSignal);
-
-  useEffect(() => {
-    const element = gl.domElement;
-    const handleWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) {
-        return;
-      }
-      event.preventDefault();
-      desiredDistance.current = clamp(
-        desiredDistance.current + event.deltaY * 0.02,
-        FOLLOW_MIN_DISTANCE,
-        FOLLOW_MAX_DISTANCE,
-      );
-    };
-
-    element.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      element.removeEventListener('wheel', handleWheel);
-    };
-  }, [gl]);
-
-  useEffect(() => {
-    if (recenterSignal <= 0 || recenterSignal === lastHandledRecenter.current) {
-      return;
-    }
-    desiredDistance.current = FOLLOW_DEFAULT_DISTANCE;
-    currentDistance.current = FOLLOW_DEFAULT_DISTANCE;
-    initialized.current = false;
-    lastHandledRecenter.current = recenterSignal;
-  }, [recenterSignal]);
-
-  useFrame(({ camera }) => {
-    smoothedTarget.current.lerp(target, 0.16);
-    blendForward(smoothedForward.current, forward, 0.14);
-
-    currentDistance.current += (desiredDistance.current - currentDistance.current) * 0.12;
-
-    const idealPosition = makeCameraPosition(
-      smoothedTarget.current,
-      smoothedForward.current,
-      currentDistance.current,
-      surfaceQuery,
-      6.2,
-      2.4,
-    );
-    const lookTarget = makeLookTarget(smoothedTarget.current, smoothedForward.current, 18, 3.4);
-
-    if (!initialized.current) {
-      camera.position.copy(idealPosition);
-      smoothedLook.current.copy(lookTarget);
-      initialized.current = true;
-    } else {
-      camera.position.lerp(idealPosition, 0.18);
-      smoothedLook.current.lerp(lookTarget, 0.2);
-    }
-
-    if (collision) {
-      shakeRef.current = Math.max(shakeRef.current, 0.32);
-    }
-    if (shakeRef.current > 0.003) {
-      const intensity = shakeRef.current * 0.16;
-      camera.position.x += (Math.random() - 0.5) * intensity;
-      camera.position.y += (Math.random() - 0.5) * intensity * 0.32;
-      camera.position.z += (Math.random() - 0.5) * intensity;
-      shakeRef.current *= 0.9;
-    }
-
-    camera.lookAt(smoothedLook.current);
-    onDroneFramingChange?.(false);
-  });
-
-  return null;
-}
-
-function OrbitFollowCamera({
-  target,
-  forward,
-  surfaceQuery,
+  worldQuery,
   interactive,
+  mode,
   recenterSignal,
   onDroneFramingChange,
 }: {
   target: THREE.Vector3;
   forward: THREE.Vector3;
-  surfaceQuery: SurfaceQuery;
+  worldQuery: SurfaceQuery;
   interactive: boolean;
+  mode: 'orbit' | 'follow';
   recenterSignal: number;
   onDroneFramingChange?: (lost: boolean) => void;
 }) {
   const controlsRef = useRef<any>(null);
-  const lastManualInputAt = useRef(0);
   const smoothedTarget = useRef(target.clone());
+  const smoothedForward = useRef(forward.clone());
   const initialized = useRef(false);
-  const lastHandledRecenter = useRef(recenterSignal);
+  const manualInteracting = useRef(false);
+  const lastManualInputAt = useRef(0);
   const lastLostState = useRef(false);
+  const lastHandledRecenter = useRef(recenterSignal);
+  const recoveryActive = useRef(false);
 
   useEffect(() => {
     if (!interactive) {
@@ -334,16 +248,30 @@ function OrbitFollowCamera({
       return;
     }
 
-    const markManualInput = () => {
+    const markManualPulse = () => {
       lastManualInputAt.current = performance.now();
+      recoveryActive.current = false;
+    };
+    const markManualStart = () => {
+      manualInteracting.current = true;
+      markManualPulse();
+    };
+    const markManualEnd = () => {
+      manualInteracting.current = false;
+      markManualPulse();
     };
 
-    controls.addEventListener('start', markManualInput);
-    controls.addEventListener('change', markManualInput);
+    const domElement = controls.domElement as HTMLElement | undefined;
+
+    controls.addEventListener('start', markManualStart);
+    controls.addEventListener('end', markManualEnd);
+    domElement?.addEventListener('wheel', markManualPulse, { passive: true });
 
     return () => {
-      controls.removeEventListener('start', markManualInput);
-      controls.removeEventListener('change', markManualInput);
+      manualInteracting.current = false;
+      controls.removeEventListener('start', markManualStart);
+      controls.removeEventListener('end', markManualEnd);
+      domElement?.removeEventListener('wheel', markManualPulse);
     };
   }, [interactive]);
 
@@ -351,11 +279,9 @@ function OrbitFollowCamera({
     if (recenterSignal <= 0 || recenterSignal === lastHandledRecenter.current) {
       return;
     }
-    const controls = controlsRef.current;
-    if (!controls) {
-      return;
-    }
-    controls.reset();
+
+    recoveryActive.current = true;
+    manualInteracting.current = false;
     lastManualInputAt.current = 0;
     initialized.current = false;
     lastHandledRecenter.current = recenterSignal;
@@ -367,39 +293,50 @@ function OrbitFollowCamera({
       return;
     }
 
-    smoothedTarget.current.lerp(target, 0.16);
-    controls.target.lerp(smoothedTarget.current, 0.18);
+    smoothedTarget.current.lerp(target, 0.18);
+    blendForward(smoothedForward.current, forward, 0.14);
+    controls.target.lerp(smoothedTarget.current, 0.22);
 
+    const currentDistance = camera.position.distanceTo(controls.target);
+    const targetDistance =
+      recoveryActive.current
+        ? FOLLOW_DEFAULT_DISTANCE
+        : mode === 'follow'
+          ? clamp(currentDistance, FOLLOW_MIN_DISTANCE, FOLLOW_MAX_DISTANCE)
+          : ORBIT_DEFAULT_DISTANCE;
     const desiredPosition = makeCameraPosition(
       smoothedTarget.current,
-      forward,
-      ORBIT_DEFAULT_DISTANCE,
-      surfaceQuery,
-      10.5,
-      4,
+      smoothedForward.current,
+      targetDistance,
+      worldQuery,
+      mode === 'follow' ? 5.8 : 10.5,
+      mode === 'follow' ? 2.2 : 4.0,
     );
 
-    const idleMs = performance.now() - lastManualInputAt.current;
     if (!initialized.current) {
       camera.position.copy(desiredPosition);
+      controls.target.copy(smoothedTarget.current);
       initialized.current = true;
-    } else if (lastManualInputAt.current === 0 || idleMs > 2400) {
-      camera.position.lerp(desiredPosition, 0.08);
+    } else if (mode === 'follow') {
+      const idleMs = performance.now() - lastManualInputAt.current;
+      const shouldAutoCorrect =
+        recoveryActive.current ||
+        (!manualInteracting.current &&
+          (lastManualInputAt.current === 0 || idleMs > 1100));
+      if (shouldAutoCorrect) {
+        camera.position.lerp(desiredPosition, recoveryActive.current ? 0.18 : 0.06);
+        if (recoveryActive.current && camera.position.distanceTo(desiredPosition) < RECENTER_SETTLE_DISTANCE) {
+          recoveryActive.current = false;
+        }
+      }
     }
 
     controls.update();
 
-    const projected = smoothedTarget.current.clone().project(camera);
-    const framingLost =
-      projected.z < -1 ||
-      projected.z > 1 ||
-      Math.abs(projected.x) > 0.84 ||
-      Math.abs(projected.y) > 0.84 ||
-      camera.position.distanceTo(smoothedTarget.current) > 180;
-
-    if (framingLost !== lastLostState.current) {
-      lastLostState.current = framingLost;
-      onDroneFramingChange?.(framingLost);
+    const lost = isTargetLost(camera, smoothedTarget.current, worldQuery, mode);
+    if (lost !== lastLostState.current) {
+      lastLostState.current = lost;
+      onDroneFramingChange?.(lost);
     }
   });
 
@@ -408,14 +345,14 @@ function OrbitFollowCamera({
       ref={controlsRef}
       enabled={interactive}
       enableDamping
-      dampingFactor={0.07}
+      dampingFactor={0.08}
       enablePan={false}
       enableZoom
       enableRotate
-      minDistance={12}
+      minDistance={FOLLOW_MIN_DISTANCE}
       maxDistance={360}
-      minPolarAngle={0.2}
-      maxPolarAngle={1.52}
+      minPolarAngle={0.12}
+      maxPolarAngle={Math.PI * 0.96}
     />
   );
 }
@@ -442,10 +379,15 @@ function TopDownCamera({
 function createSurfaceQuery(worldLayout: WorldLayout): SurfaceQuery {
   const cellSize = worldLayout.blockSize + worldLayout.roadWidth;
   const buckets = new Map<string, SurfaceFootprint[]>();
-  const colliders = [worldLayout.plaza, ...worldLayout.buildings.map((building) => building.collider)];
+  const colliders = [
+    ...worldLayout.plazaPlatforms,
+    worldLayout.landmark.pedestal,
+    ...worldLayout.landmark.collisionBoxes,
+    ...worldLayout.buildings.map((building) => building.collider),
+  ];
+  const footprints = colliders.map((collider, id) => colliderToFootprint(collider, id));
 
-  for (const collider of colliders) {
-    const footprint = colliderToFootprint(collider);
+  footprints.forEach((footprint) => {
     const minCellX = Math.floor(footprint.minX / cellSize);
     const maxCellX = Math.floor(footprint.maxX / cellSize);
     const minCellY = Math.floor(footprint.minY / cellSize);
@@ -462,12 +404,11 @@ function createSurfaceQuery(worldLayout: WorldLayout): SurfaceQuery {
         }
       }
     }
-  }
+  });
 
   return {
     heightAt(x: number, y: number) {
-      const key = `${Math.floor(x / cellSize)}:${Math.floor(y / cellSize)}`;
-      const bucket = buckets.get(key);
+      const bucket = buckets.get(makeBucketKey(x, y, cellSize));
       if (!bucket) {
         return 0;
       }
@@ -485,19 +426,93 @@ function createSurfaceQuery(worldLayout: WorldLayout): SurfaceQuery {
       }
       return top;
     },
+    isOccluded(from: THREE.Vector3, to: THREE.Vector3) {
+      const candidateIds = new Set<number>();
+      const distance = from.distanceTo(to);
+      const steps = Math.max(4, Math.ceil(distance / cellSize * 1.5));
+
+      for (let index = 0; index <= steps; index += 1) {
+        const t = index / steps;
+        const sample = new THREE.Vector3().lerpVectors(from, to, t);
+        const bucket = buckets.get(makeBucketKey(sample.x, -sample.z, cellSize));
+        if (!bucket) {
+          continue;
+        }
+        for (const footprint of bucket) {
+          candidateIds.add(footprint.id);
+        }
+      }
+
+      const ray = new THREE.Ray(from.clone(), to.clone().sub(from).normalize());
+      const hitPoint = new THREE.Vector3();
+
+      for (const candidateId of candidateIds) {
+        const footprint = footprints[candidateId];
+        if (!footprint) {
+          continue;
+        }
+        const hit = ray.intersectBox(footprint.box, hitPoint);
+        if (hit && from.distanceTo(hit) < distance - 1.2) {
+          return true;
+        }
+      }
+
+      return false;
+    },
   };
 }
 
-function colliderToFootprint(collider: ObstacleBox): SurfaceFootprint {
+function isTargetLost(
+  camera: THREE.Camera,
+  target: THREE.Vector3,
+  worldQuery: SurfaceQuery,
+  mode: 'orbit' | 'follow',
+) {
+  const projected = target.clone().project(camera);
+  const direction = new THREE.Vector3();
+  camera.getWorldDirection(direction);
+  const toTarget = target.clone().sub(camera.position).normalize();
+  const alignment = direction.dot(toTarget);
+  const distance = camera.position.distanceTo(target);
+
+  return (
+    projected.z < -1 ||
+    projected.z > 1 ||
+    Math.abs(projected.x) > 0.86 ||
+    Math.abs(projected.y) > 0.86 ||
+    alignment < 0.05 ||
+    distance > (mode === 'follow' ? LOST_DISTANCE_FOLLOW : LOST_DISTANCE_ORBIT) ||
+    worldQuery.isOccluded(camera.position, target)
+  );
+}
+
+function colliderToFootprint(collider: ObstacleBox, id: number): SurfaceFootprint {
   const halfWidth = collider.size.x * 0.5;
   const halfDepth = collider.size.y * 0.5;
   return {
+    id,
     minX: collider.center.x - halfWidth,
     maxX: collider.center.x + halfWidth,
     minY: collider.center.y - halfDepth,
     maxY: collider.center.y + halfDepth,
     topZ: collider.center.z + collider.size.z * 0.5,
+    box: new THREE.Box3(
+      new THREE.Vector3(
+        collider.center.x - halfWidth,
+        collider.center.z - collider.size.z * 0.5,
+        -(collider.center.y + halfDepth),
+      ),
+      new THREE.Vector3(
+        collider.center.x + halfWidth,
+        collider.center.z + collider.size.z * 0.5,
+        -(collider.center.y - halfDepth),
+      ),
+    ),
   };
+}
+
+function makeBucketKey(x: number, y: number, cellSize: number) {
+  return `${Math.floor(x / cellSize)}:${Math.floor(y / cellSize)}`;
 }
 
 function toThreeTarget(position: Vec3): THREE.Vector3 {
@@ -531,7 +546,7 @@ function makeCameraPosition(
   target: THREE.Vector3,
   forward: THREE.Vector3,
   distance: number,
-  surfaceQuery: SurfaceQuery,
+  worldQuery: SurfaceQuery,
   extraHeight: number,
   lateralOffset: number,
 ): THREE.Vector3 {
@@ -542,8 +557,8 @@ function makeCameraPosition(
     .addScaledVector(WORLD_UP, extraHeight + distance * 0.24)
     .addScaledVector(right, lateralOffset);
 
-  const surfaceHeight = surfaceQuery.heightAt(position.x, -position.z);
-  position.y = Math.max(position.y, surfaceHeight + 7.5);
+  const surfaceHeight = worldQuery.heightAt(position.x, -position.z);
+  position.y = Math.max(position.y, surfaceHeight + 6.8);
   return position;
 }
 

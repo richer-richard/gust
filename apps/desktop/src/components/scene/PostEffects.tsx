@@ -15,8 +15,8 @@ export function PostEffects({ theme }: PostEffectsProps) {
     <EffectComposer multisampling={0}>
       <Bloom
         intensity={theme.post.bloomIntensity}
-        luminanceThreshold={0.6}
-        luminanceSmoothing={0.3}
+        luminanceThreshold={theme.post.bloomThreshold}
+        luminanceSmoothing={theme.post.bloomSmoothing}
         mipmapBlur
       />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />

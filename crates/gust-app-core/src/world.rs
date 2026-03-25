@@ -1,7 +1,10 @@
-use gust_types::{ObstacleBox, ScenarioConfig, Vec3, Waypoint, WorldBuilding, WorldLayout};
+use gust_types::{
+    ObstacleBox, ScenarioConfig, Vec3, Waypoint, WorldBuilding, WorldLandmark, WorldLayout,
+};
 
 const DEFAULT_WORLD_SEED: u32 = 42;
 const DRONE_SPAWN_RADIUS_M: f64 = 0.26;
+const PLAZA_TOP_Z: f64 = 10.0;
 
 pub fn resolve_world_layout(_scenario_id: &str) -> WorldLayout {
     generate_world_layout(DEFAULT_WORLD_SEED)
@@ -15,8 +18,6 @@ pub fn apply_world_to_scenario(base: &ScenarioConfig, world: &WorldLayout) -> Sc
         resolved.start_position
     };
     resolved.obstacles = collect_world_colliders(world);
-
-    let plaza_top = world.plaza.center.z + world.plaza.size.z * 0.5;
     resolved.waypoints = base
         .waypoints
         .iter()
@@ -24,7 +25,7 @@ pub fn apply_world_to_scenario(base: &ScenarioConfig, world: &WorldLayout) -> Sc
             position: Vec3 {
                 x: waypoint.position.x,
                 y: waypoint.position.y,
-                z: waypoint.position.z + plaza_top,
+                z: waypoint.position.z + world.launch_surface_z,
             },
             hold_s: waypoint.hold_s,
         })
@@ -34,8 +35,12 @@ pub fn apply_world_to_scenario(base: &ScenarioConfig, world: &WorldLayout) -> Sc
 }
 
 pub fn collect_world_colliders(world: &WorldLayout) -> Vec<ObstacleBox> {
-    let mut colliders = Vec::with_capacity(world.buildings.len() + 1);
-    colliders.push(world.plaza.clone());
+    let mut colliders = Vec::with_capacity(
+        world.plaza_platforms.len() + world.landmark.collision_boxes.len() + world.buildings.len() + 1,
+    );
+    colliders.extend(world.plaza_platforms.iter().cloned());
+    colliders.push(world.landmark.pedestal.clone());
+    colliders.extend(world.landmark.collision_boxes.iter().cloned());
     colliders.extend(
         world
             .buildings
@@ -50,10 +55,28 @@ fn generate_world_layout(seed: u32) -> WorldLayout {
     let block_size = 60.0;
     let road_width = 16.0;
     let plaza_half_extent = 170.0;
-    let plaza_height = 50.0;
     let cell_size = block_size + road_width;
     let half_grid = grid_size * 0.5;
     let max_cell_index = (half_grid / cell_size) as i32;
+
+    let plaza_base = ObstacleBox {
+        center: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: -0.35,
+        },
+        size: Vec3 {
+            x: plaza_half_extent * 2.0,
+            y: plaza_half_extent * 2.0,
+            z: 0.7,
+        },
+    };
+    let plaza_platforms = vec![
+        platform_box(0.0, 0.0, 116.0, 116.0, 3.0),
+        platform_box(0.0, 0.0, 72.0, 72.0, 6.0),
+        platform_box(0.0, 0.0, 42.0, 42.0, PLAZA_TOP_Z),
+    ];
+    let landmark = build_landmark(0.0, 0.0, PLAZA_TOP_Z);
 
     let mut buildings = Vec::new();
     let anchors = supertall_anchors();
@@ -128,9 +151,7 @@ fn generate_world_layout(seed: u32) -> WorldLayout {
                 continue;
             }
 
-            let columns = 2;
-            let rows = 2;
-            let mut slots = build_slots(center_x, center_y, block_size, columns, rows);
+            let mut slots = build_slots(center_x, center_y, block_size, 2, 2);
             shuffle(&mut slots, &mut rand);
 
             let target_count = match zone {
@@ -139,9 +160,8 @@ fn generate_world_layout(seed: u32) -> WorldLayout {
                 Zone::Midrise => 3,
                 Zone::Boundary => 3,
             };
-            let count = target_count.min(slots.len());
 
-            for slot in slots.into_iter().take(count) {
+            for slot in slots.into_iter().take(target_count) {
                 let width_base = match zone {
                     Zone::Downtown => 12.0 + rand.next() * 8.0,
                     Zone::Inner => 13.0 + rand.next() * 10.0,
@@ -187,25 +207,99 @@ fn generate_world_layout(seed: u32) -> WorldLayout {
         block_size,
         road_width,
         plaza_half_extent,
-        plaza: ObstacleBox {
+        plaza_base,
+        plaza_platforms,
+        launch_surface_z: PLAZA_TOP_Z,
+        spawn_position: Vec3 {
+            x: -13.5,
+            y: 0.0,
+            z: PLAZA_TOP_Z + DRONE_SPAWN_RADIUS_M,
+        },
+        preview_yaw: 0.28,
+        landmark,
+        buildings,
+    }
+}
+
+fn platform_box(x: f64, y: f64, width: f64, depth: f64, top_z: f64) -> ObstacleBox {
+    ObstacleBox {
+        center: Vec3 {
+            x,
+            y,
+            z: top_z * 0.5,
+        },
+        size: Vec3 {
+            x: width,
+            y: depth,
+            z: top_z,
+        },
+    }
+}
+
+fn build_landmark(x: f64, y: f64, platform_top_z: f64) -> WorldLandmark {
+    let pedestal_height = 3.4;
+    let pedestal_top = platform_top_z + pedestal_height;
+    let pedestal = ObstacleBox {
+        center: Vec3 {
+            x,
+            y,
+            z: platform_top_z + pedestal_height * 0.5,
+        },
+        size: Vec3 {
+            x: 10.0,
+            y: 10.0,
+            z: pedestal_height,
+        },
+    };
+
+    let collision_boxes = vec![
+        ObstacleBox {
             center: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: plaza_height * 0.5,
+                x,
+                y,
+                z: pedestal_top + 5.6,
             },
             size: Vec3 {
-                x: plaza_half_extent * 2.0,
-                y: plaza_half_extent * 2.0,
-                z: plaza_height,
+                x: 2.8,
+                y: 2.8,
+                z: 11.2,
             },
         },
-        spawn_position: Vec3 {
-            x: 0.0,
-            y: 0.0,
-            z: plaza_height + DRONE_SPAWN_RADIUS_M,
+        ObstacleBox {
+            center: Vec3 {
+                x,
+                y,
+                z: pedestal_top + 7.6,
+            },
+            size: Vec3 {
+                x: 15.0,
+                y: 2.4,
+                z: 2.4,
+            },
         },
-        preview_yaw: 0.32,
-        buildings,
+        ObstacleBox {
+            center: Vec3 {
+                x,
+                y,
+                z: pedestal_top + 7.6,
+            },
+            size: Vec3 {
+                x: 2.4,
+                y: 15.0,
+                z: 2.4,
+            },
+        },
+    ];
+
+    WorldLandmark {
+        center: Vec3 {
+            x,
+            y,
+            z: pedestal_top + 7.6,
+        },
+        pedestal,
+        collision_boxes,
+        scale: 1.0,
     }
 }
 
@@ -408,8 +502,8 @@ impl Mulberry32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_world_to_scenario, generate_world_layout};
-    use gust_types::{FaultProfile, ScenarioConfig, Vec3};
+    use super::{PLAZA_TOP_Z, apply_world_to_scenario, generate_world_layout};
+    use gust_types::{FaultProfile, ScenarioConfig, Vec3, Waypoint};
 
     #[test]
     fn world_layout_is_deterministic() {
@@ -417,8 +511,9 @@ mod tests {
         let second = generate_world_layout(42);
 
         assert_eq!(first.seed, second.seed);
-        assert_eq!(first.grid_size, second.grid_size);
-        assert_eq!(first.plaza, second.plaza);
+        assert_eq!(first.plaza_base, second.plaza_base);
+        assert_eq!(first.plaza_platforms, second.plaza_platforms);
+        assert_eq!(first.landmark.pedestal, second.landmark.pedestal);
         assert_eq!(first.buildings.len(), second.buildings.len());
         assert_eq!(first.buildings.first(), second.buildings.first());
         assert_eq!(first.buildings.last(), second.buildings.last());
@@ -439,7 +534,7 @@ mod tests {
     fn world_application_replaces_obstacles_and_lifts_waypoints() {
         let world = generate_world_layout(42);
         let base = ScenarioConfig {
-            id: "city_flyover".into(),
+            id: "city_flyover_sunny".into(),
             name: "City".into(),
             description: "City".into(),
             base_wind: Vec3::default(),
@@ -449,7 +544,7 @@ mod tests {
             faults: FaultProfile::default(),
             start_position: Vec3::default(),
             obstacles: Vec::new(),
-            waypoints: vec![gust_types::Waypoint {
+            waypoints: vec![Waypoint {
                 position: Vec3 {
                     x: 0.0,
                     y: 0.0,
@@ -462,7 +557,11 @@ mod tests {
         let resolved = apply_world_to_scenario(&base, &world);
 
         assert_eq!(resolved.start_position, world.spawn_position);
-        assert_eq!(resolved.obstacles.len(), world.buildings.len() + 1);
+        assert_eq!(
+            resolved.obstacles.len(),
+            world.plaza_platforms.len() + world.landmark.collision_boxes.len() + world.buildings.len() + 1
+        );
+        assert_eq!(world.launch_surface_z, PLAZA_TOP_Z);
         assert!(resolved.waypoints[0].position.z > base.waypoints[0].position.z);
     }
 }

@@ -82,7 +82,7 @@ export function LandingOverlay({
         </div>
 
         <button className="landing-launch-btn" onClick={onStart} disabled={isLaunching}>
-          {isLaunching ? 'Launching...' : 'Launch Sunny Flyover'}
+          {isLaunching ? 'Launching...' : 'Launch Flyover'}
         </button>
       </div>
     </div>

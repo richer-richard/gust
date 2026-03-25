@@ -13,6 +13,12 @@ import type { AssistLevel } from './lib/types';
 
 type SessionStage = 'landing' | 'launching' | 'active';
 
+const FLYOVER_SCENARIO_BY_THEME: Record<ThemeId, string> = {
+  sunny: 'city_flyover_sunny',
+  cloudy: 'city_flyover_cloudy',
+  night: 'city_flyover_night',
+};
+
 export default function App() {
   const snapshot = useSimulationStore((s) => s.snapshot);
   const worldLayout = useSimulationStore((s) => s.worldLayout);
@@ -42,7 +48,9 @@ export default function App() {
   const theme = useMemo(() => SCENE_THEME_BY_ID[selectedThemeId], [selectedThemeId]);
   const assistLevel = (snapshot?.assistLevel ?? 'intent_assist') as AssistLevel;
   const sessionIsActive = sessionStage === 'active';
-  const showScenarioVisuals = sessionIsActive && snapshot?.activeScenarioId !== 'city_flyover';
+  const activeFlyoverScenarioId = FLYOVER_SCENARIO_BY_THEME[selectedThemeId];
+  const showScenarioVisuals =
+    sessionIsActive && !(snapshot?.activeScenarioId ?? '').startsWith('city_flyover_');
   const sceneReady = Boolean(snapshot && worldLayout);
 
   const ignoreCommandError = (promise: Promise<void>) => {
@@ -63,7 +71,7 @@ export default function App() {
 
     try {
       await setRunState('stopped');
-      await activateScenario('city_flyover');
+      await activateScenario(activeFlyoverScenarioId);
       await setControllerMode('player');
       await setAssistLevel('intent_assist');
       await setRunState('running');
@@ -79,7 +87,7 @@ export default function App() {
 
     try {
       await setRunState('stopped');
-      await activateScenario('city_flyover');
+      await activateScenario(activeFlyoverScenarioId);
       await setControllerMode('player');
       await setAssistLevel('intent_assist');
       setCameraMode('follow');

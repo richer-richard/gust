@@ -186,15 +186,27 @@ pub struct WorldBuilding {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorldLandmark {
+    pub center: Vec3,
+    pub pedestal: ObstacleBox,
+    pub collision_boxes: Vec<ObstacleBox>,
+    pub scale: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorldLayout {
     pub seed: u32,
     pub grid_size: f64,
     pub block_size: f64,
     pub road_width: f64,
     pub plaza_half_extent: f64,
-    pub plaza: ObstacleBox,
+    pub plaza_base: ObstacleBox,
+    pub plaza_platforms: Vec<ObstacleBox>,
+    pub launch_surface_z: f64,
     pub spawn_position: Vec3,
     pub preview_yaw: f64,
+    pub landmark: WorldLandmark,
     pub buildings: Vec<WorldBuilding>,
 }
 

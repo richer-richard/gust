@@ -21,7 +21,7 @@ export function CameraRecoveryInset({
     <button className="camera-inset" onClick={onClick} type="button">
       <div className="camera-inset-header">
         <span>Recovery assist</span>
-        <span>Click to recenter</span>
+        <span>Return to drone</span>
       </div>
       <div className="camera-inset-view">
         <div className="camera-inset-radar" aria-hidden="true">
@@ -42,8 +42,8 @@ export function CameraRecoveryInset({
             <span className="camera-inset-value">{headingDeg.toFixed(0)}°</span>
           </div>
           <div className="camera-inset-stat">
-            <span className="camera-inset-label">Altitude</span>
-            <span className="camera-inset-value">{snapshot.drone.position.z.toFixed(1)} m</span>
+            <span className="camera-inset-label">Clearance</span>
+            <span className="camera-inset-value">{snapshot.drone.clearanceAgl.toFixed(1)} m</span>
           </div>
           <div className="camera-inset-stat">
             <span className="camera-inset-label">Speed</span>

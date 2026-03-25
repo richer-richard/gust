@@ -129,14 +129,24 @@ export interface WorldBuilding {
   litPercentage: number;
 }
 
+export interface WorldLandmark {
+  center: Vec3;
+  pedestal: ObstacleBox;
+  collisionBoxes: ObstacleBox[];
+  scale: number;
+}
+
 export interface WorldLayout {
   seed: number;
   gridSize: number;
   blockSize: number;
   roadWidth: number;
   plazaHalfExtent: number;
-  plaza: ObstacleBox;
+  plazaBase: ObstacleBox;
+  plazaPlatforms: ObstacleBox[];
+  launchSurfaceZ: number;
   spawnPosition: Vec3;
   previewYaw: number;
+  landmark: WorldLandmark;
   buildings: WorldBuilding[];
 }

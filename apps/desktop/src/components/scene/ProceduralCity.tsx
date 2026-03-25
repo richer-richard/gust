@@ -1,5 +1,5 @@
 /**
- * ProceduralCity - Renders the backend-authored world layout with instanced towers.
+ * ProceduralCity - Renders the backend-authored city, stepped plaza, and landmark statue.
  */
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -356,7 +356,35 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
     [theme, worldLayout.blockSize, worldLayout.roadWidth],
   );
 
-  const plazaTop = worldLayout.plaza.center.z + worldLayout.plaza.size.z * 0.5;
+  const plazaBaseMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: theme.city.groundPlaza,
+        roughness: 0.94,
+        metalness: 0.02,
+      }),
+    [theme.city.groundPlaza],
+  );
+
+  const plazaStepMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: theme.city.groundPlazaAccent,
+        roughness: 0.9,
+        metalness: 0.04,
+      }),
+    [theme.city.groundPlazaAccent],
+  );
+
+  const pedestalMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: theme.id === 'night' ? '#5c6882' : '#6b6c6f',
+        roughness: 0.55,
+        metalness: 0.22,
+      }),
+    [theme.id],
+  );
 
   return (
     <group>
@@ -371,48 +399,54 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
 
       <mesh
         position={[
-          worldLayout.plaza.center.x,
-          worldLayout.plaza.center.z,
-          -worldLayout.plaza.center.y,
+          worldLayout.plazaBase.center.x,
+          worldLayout.plazaBase.center.z,
+          -worldLayout.plazaBase.center.y,
         ]}
+        material={plazaBaseMaterial}
+        receiveShadow
+      >
+        <boxGeometry
+          args={[
+            worldLayout.plazaBase.size.x,
+            worldLayout.plazaBase.size.z,
+            worldLayout.plazaBase.size.y,
+          ]}
+        />
+      </mesh>
+
+      {worldLayout.plazaPlatforms.map((platform, index) => (
+        <mesh
+          key={`plaza-platform-${index}`}
+          position={[platform.center.x, platform.center.z, -platform.center.y]}
+          material={plazaStepMaterial}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry args={[platform.size.x, platform.size.z, platform.size.y]} />
+        </mesh>
+      ))}
+
+      <mesh
+        position={[
+          worldLayout.landmark.pedestal.center.x,
+          worldLayout.landmark.pedestal.center.z,
+          -worldLayout.landmark.pedestal.center.y,
+        ]}
+        material={pedestalMaterial}
         castShadow
         receiveShadow
       >
         <boxGeometry
           args={[
-            worldLayout.plaza.size.x,
-            worldLayout.plaza.size.z,
-            worldLayout.plaza.size.y,
+            worldLayout.landmark.pedestal.size.x,
+            worldLayout.landmark.pedestal.size.z,
+            worldLayout.landmark.pedestal.size.y,
           ]}
-        />
-        <meshStandardMaterial
-          color={theme.city.groundPlaza}
-          emissive={theme.city.groundPlazaAccent}
-          emissiveIntensity={0.03}
-          roughness={0.9}
-          metalness={0.04}
         />
       </mesh>
 
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, plazaTop + 0.03, 0]}
-        receiveShadow
-      >
-        <planeGeometry
-          args={[
-            worldLayout.plaza.size.x - 10,
-            worldLayout.plaza.size.y - 10,
-            1,
-            1,
-          ]}
-        />
-        <meshStandardMaterial
-          color={theme.city.groundPlazaAccent}
-          roughness={0.92}
-          metalness={0.02}
-        />
-      </mesh>
+      <RotorStatue worldLayout={worldLayout} theme={theme} />
 
       <instancedMesh
         ref={meshRef}
@@ -421,6 +455,72 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
         castShadow
         receiveShadow
       />
+    </group>
+  );
+}
+
+function RotorStatue({
+  worldLayout,
+  theme,
+}: {
+  worldLayout: WorldLayout;
+  theme: SceneTheme;
+}) {
+  const statueColor = theme.id === 'night' ? '#a9c7ff' : '#556577';
+  const accentColor = theme.id === 'night' ? '#ffd47c' : '#c4b28a';
+  const center = worldLayout.landmark.center;
+  const scale = worldLayout.landmark.scale;
+
+  return (
+    <group position={[center.x, center.z, -center.y]} scale={[scale, scale, scale]}>
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[0.9, 1.2, 9.5, 14]} />
+        <meshStandardMaterial
+          color={statueColor}
+          metalness={0.82}
+          roughness={0.18}
+        />
+      </mesh>
+
+      <mesh position={[0, 1.8, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <torusGeometry args={[4.4, 0.42, 18, 72]} />
+        <meshStandardMaterial
+          color={accentColor}
+          metalness={0.76}
+          roughness={0.2}
+          emissive={theme.id === 'night' ? accentColor : '#000000'}
+          emissiveIntensity={theme.id === 'night' ? 0.18 : 0}
+        />
+      </mesh>
+
+      <mesh position={[0, 1.8, 0]} rotation={[0, 0, Math.PI / 4]} castShadow>
+        <boxGeometry args={[13.5, 0.9, 0.9]} />
+        <meshStandardMaterial
+          color={statueColor}
+          metalness={0.9}
+          roughness={0.14}
+        />
+      </mesh>
+
+      <mesh position={[0, 1.8, 0]} rotation={[Math.PI / 2, 0, Math.PI / 4]} castShadow>
+        <boxGeometry args={[13.5, 0.9, 0.9]} />
+        <meshStandardMaterial
+          color={statueColor}
+          metalness={0.9}
+          roughness={0.14}
+        />
+      </mesh>
+
+      <mesh position={[0, 5.2, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <octahedronGeometry args={[2.05, 0]} />
+        <meshStandardMaterial
+          color={accentColor}
+          metalness={0.88}
+          roughness={0.15}
+          emissive={theme.id === 'night' ? '#5e7db1' : '#000000'}
+          emissiveIntensity={theme.id === 'night' ? 0.28 : 0}
+        />
+      </mesh>
     </group>
   );
 }

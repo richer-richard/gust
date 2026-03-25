@@ -1,0 +1,49 @@
+{
+  "id": "city_flyover_night",
+  "name": "Night Flyover",
+  "description": "Night departure with the shortest visibility range, luminous towers, and a boulevard-biased route that hops between lit corridors and rooftops.",
+  "baseWind": { "x": 1.15, "y": -0.35, "z": 0.0 },
+  "gustAmplitude": 1.35,
+  "gustCellSize": 18.0,
+  "durationS": 60.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.04,
+    "imuNoiseScale": 0.08
+  },
+  "obstacles": [],
+  "waypoints": [
+    {
+      "position": { "x": -12.0, "y": 0.0, "z": 8.0 },
+      "holdS": 1.1
+    },
+    {
+      "position": { "x": 72.0, "y": 0.0, "z": 14.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": 142.0, "y": -12.0, "z": 20.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": 142.0, "y": 72.0, "z": 24.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": 28.0, "y": 124.0, "z": 18.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": -86.0, "y": 84.0, "z": 16.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -126.0, "y": -18.0, "z": 14.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -12.0, "y": 0.0, "z": 10.0 },
+      "holdS": 1.4
+    }
+  ]
+}
