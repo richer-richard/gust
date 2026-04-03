@@ -47,6 +47,8 @@ pub struct ScenarioConfig {
     pub gust_cell_size: f64,
     pub duration_s: f64,
     pub faults: FaultProfile,
+    #[serde(default)]
+    pub start_position: Vec3,
     pub obstacles: Vec<ObstacleBox>,
     pub waypoints: Vec<Waypoint>,
 }
@@ -76,6 +78,7 @@ pub struct DroneTelemetry {
     pub collision: bool,
     pub closest_obstacle_distance: f64,
     pub recovery_margin: f64,
+    pub clearance_agl: f64,
     pub health: f64,
 }
 
@@ -165,6 +168,46 @@ pub struct SimulationSnapshot {
     pub environment: EnvironmentTelemetry,
     pub obstacles: Vec<ObstacleBox>,
     pub waypoints: Vec<Waypoint>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldBuilding {
+    pub collider: ObstacleBox,
+    pub color_r: f64,
+    pub color_g: f64,
+    pub color_b: f64,
+    pub window_seed: f64,
+    pub floors: u32,
+    pub windows_per_floor: u32,
+    pub side_windows_per_floor: u32,
+    pub lit_percentage: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldLandmark {
+    pub center: Vec3,
+    pub pedestal: ObstacleBox,
+    pub collision_boxes: Vec<ObstacleBox>,
+    pub scale: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldLayout {
+    pub seed: u32,
+    pub grid_size: f64,
+    pub block_size: f64,
+    pub road_width: f64,
+    pub plaza_half_extent: f64,
+    pub plaza_base: ObstacleBox,
+    pub plaza_platforms: Vec<ObstacleBox>,
+    pub launch_surface_z: f64,
+    pub spawn_position: Vec3,
+    pub preview_yaw: f64,
+    pub landmark: WorldLandmark,
+    pub buildings: Vec<WorldBuilding>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

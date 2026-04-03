@@ -132,6 +132,16 @@ double sphere_to_box_distance(const Vec3 &center, const Obstacle &obstacle) {
   return length(center - closest) - kDroneRadius;
 }
 
+double wrap_angle(double angle) {
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kTwoPi = 2.0 * kPi;
+  angle = std::fmod(angle + kPi, kTwoPi);
+  if (angle < 0.0) {
+    angle += kTwoPi;
+  }
+  return angle - kPi;
+}
+
 }  // namespace
 
 Simulator::Simulator(Scenario scenario) {
@@ -142,7 +152,11 @@ void Simulator::reset(Scenario scenario) {
   scenario_ = std::move(scenario);
   tick_ = 0;
   sim_time_s_ = 0.0;
-  position_ = {0.0, 0.0, 0.0};
+  position_ = scenario_.start_position;
+  if (std::abs(position_.x) < 1e-6 && std::abs(position_.y) < 1e-6 &&
+      std::abs(position_.z) < 1e-6) {
+    position_.z = kDroneRadius;
+  }
   velocity_ = {};
   euler_ = {};
   angular_velocity_ = {};
@@ -157,6 +171,7 @@ void Simulator::reset(Scenario scenario) {
   gust_strength_ = 0.0;
   turbulence_index_ = 0.0;
   health_ = 1.0;
+  sensor_packet_ = build_sensor_packet(last_world_accel_);
 }
 
 void Simulator::set_rotor_command(const std::array<double, 4> &command) {
@@ -206,7 +221,7 @@ void Simulator::step(double dt) {
   }
 
   const bool grounded_idle =
-      position_.z <= 0.02 &&
+      clearance_agl() <= 0.02 &&
       total_thrust < (kMassKg * kGravity * 0.95) &&
       velocity_.z <= 0.25;
 
@@ -228,6 +243,7 @@ void Simulator::step(double dt) {
   euler_ += euler_rate_from_body_rate(euler_, angular_velocity_) * dt;
   euler_.x = std::clamp(euler_.x, -1.1, 1.1);
   euler_.y = std::clamp(euler_.y, -1.1, 1.1);
+  euler_.z = wrap_angle(euler_.z);
 
   const auto thrust_world = rotate_body_to_world(make_vec(0.0, 0.0, total_thrust), euler_);
   const auto gravity = make_vec(0.0, 0.0, -kGravity);
@@ -236,14 +252,15 @@ void Simulator::step(double dt) {
   const auto world_accel = gravity + (thrust_world / kMassKg) + drag_accel;
 
   if (grounded_idle) {
+    position_.z = support_height_below(position_) + kDroneRadius;
     velocity_.x *= 0.72;
     velocity_.y *= 0.72;
     velocity_.z = 0.0;
-    position_.z = 0.0;
     angular_velocity_ *= 0.72;
     last_world_accel_ = {};
     resolve_collisions();
     update_recovery_margin();
+    sensor_packet_ = build_sensor_packet(last_world_accel_);
     return;
   }
 
@@ -253,13 +270,38 @@ void Simulator::step(double dt) {
 
   resolve_collisions();
   update_recovery_margin();
+  sensor_packet_ = build_sensor_packet(last_world_accel_);
+}
+
+double Simulator::support_height_below(const Vec3 &position) const {
+  double support_height = 0.0;
+  for (const auto &obstacle : scenario_.obstacles) {
+    const auto half = obstacle.size * 0.5;
+    const bool within_x = position.x >= obstacle.center.x - half.x &&
+                          position.x <= obstacle.center.x + half.x;
+    const bool within_y = position.y >= obstacle.center.y - half.y &&
+                          position.y <= obstacle.center.y + half.y;
+    if (!within_x || !within_y) {
+      continue;
+    }
+
+    const auto top = obstacle.center.z + half.z;
+    if (top <= position.z + kDroneRadius + 0.5) {
+      support_height = std::max(support_height, top);
+    }
+  }
+  return support_height;
+}
+
+double Simulator::clearance_agl() const {
+  return std::max(0.0, position_.z - kDroneRadius - support_height_below(position_));
 }
 
 void Simulator::resolve_collisions() {
   closest_obstacle_distance_ = std::numeric_limits<double>::max();
 
-  if (position_.z < 0.0) {
-    position_.z = 0.0;
+  if (position_.z < kDroneRadius) {
+    position_.z = kDroneRadius;
     velocity_.x *= 0.82;
     velocity_.y *= 0.82;
     velocity_.z = std::max(0.0, velocity_.z);
@@ -316,7 +358,7 @@ void Simulator::resolve_collisions() {
 }
 
 void Simulator::update_recovery_margin() {
-  const auto altitude_margin = std::clamp(position_.z / 3.0, 0.0, 1.0);
+  const auto altitude_margin = std::clamp(clearance_agl() / 3.0, 0.0, 1.0);
   const auto attitude_margin =
       1.0 - std::clamp(std::max(std::abs(euler_.x), std::abs(euler_.y)) / 0.95, 0.0, 1.0);
   const auto obstacle_margin =
@@ -351,7 +393,7 @@ SensorPacket Simulator::build_sensor_packet(const Vec3 &world_accel) {
     packet.altimeter_valid = cycle < 7.4;
   }
   packet.altimeter_altitude =
-      position_.z + scenario_.faults.altimeter_bias_m + noise(0.03);
+      clearance_agl() + scenario_.faults.altimeter_bias_m + noise(0.03);
 
   packet.imu_accel =
       world_accel + make_vec(noise(0.18), noise(0.18), noise(0.12)) *
@@ -376,13 +418,13 @@ StateFrame Simulator::snapshot() const {
   frame.drone.collision = collision_;
   frame.drone.closest_obstacle_distance = closest_obstacle_distance_;
   frame.drone.recovery_margin = recovery_margin_;
+  frame.drone.clearance_agl = clearance_agl();
   frame.drone.health = health_;
   frame.environment.wind_world = current_wind_;
   frame.environment.gust_strength = gust_strength_;
   frame.environment.turbulence_index = turbulence_index_;
-  frame.obstacles = scenario_.obstacles;
   frame.waypoints = scenario_.waypoints;
-  frame.sensors = const_cast<Simulator *>(this)->build_sensor_packet(last_world_accel_);
+  frame.sensors = sensor_packet_;
   return frame;
 }
 

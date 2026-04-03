@@ -1,0 +1,45 @@
+{
+  "id": "city_flyover_sunny",
+  "name": "Sunny Flyover",
+  "description": "Bright daylight departure from the central plaza with the longest visibility and a scenic loop around the signature core towers.",
+  "baseWind": { "x": 0.8, "y": 0.25, "z": 0.0 },
+  "gustAmplitude": 0.9,
+  "gustCellSize": 22.0,
+  "durationS": 60.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.0,
+    "imuNoiseScale": 0.05
+  },
+  "obstacles": [],
+  "waypoints": [
+    {
+      "position": { "x": -12.0, "y": 0.0, "z": 8.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": 95.0, "y": -24.0, "z": 22.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 160.0, "y": 48.0, "z": 28.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 34.0, "y": 138.0, "z": 24.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -112.0, "y": 52.0, "z": 18.0 },
+      "holdS": 1.2
+    },
+    {
+      "position": { "x": -78.0, "y": -126.0, "z": 20.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -12.0, "y": 0.0, "z": 10.0 },
+      "holdS": 1.5
+    }
+  ]
+}

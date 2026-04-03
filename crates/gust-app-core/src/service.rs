@@ -9,13 +9,14 @@ use anyhow::{Context, Result, anyhow};
 use gust_sim_bridge::{NativeFrame, Simulator};
 use gust_types::{
     AssistLevel, ControllerMode, EvaluationReport, FlightPhase, PlayerInput, RunState,
-    ScenarioConfig, ScenarioSummary, SimulationSnapshot,
+    ScenarioConfig, ScenarioSummary, SimulationSnapshot, WorldLayout,
 };
 use parking_lot::{Mutex, RwLock};
 
 use crate::controllers::ControllerState;
 use crate::evaluation::run_quick_evaluation;
 use crate::scenarios::load_built_in_scenarios;
+use crate::world::{apply_world_to_scenario, resolve_world_layout};
 
 const STEP_DT_S: f64 = 1.0 / 120.0;
 
@@ -29,10 +30,12 @@ pub struct SimulationService {
 impl SimulationService {
     pub fn new() -> Result<Self> {
         let scenarios = load_built_in_scenarios()?;
-        let active_scenario = scenarios
+        let base_scenario = scenarios
             .first()
             .cloned()
             .context("no built-in scenarios were loaded")?;
+        let world_layout = resolve_world_layout(&base_scenario.id);
+        let active_scenario = apply_world_to_scenario(&base_scenario, &world_layout);
 
         let mut simulator = Simulator::new(&active_scenario)?;
         let mut controller = ControllerState::new(ControllerMode::Player);
@@ -54,7 +57,9 @@ impl SimulationService {
         let engine = Arc::new(Mutex::new(Engine {
             simulator,
             scenarios,
-            active_scenario_id: active_scenario.id.clone(),
+            active_scenario_id: base_scenario.id.clone(),
+            resolved_scenario: active_scenario.clone(),
+            world_layout,
             controller,
             run_state: RunState::Stopped,
             last_status: "Landing ready | launch Flyover Mode to enter the city.".into(),
@@ -88,6 +93,11 @@ impl SimulationService {
             .iter()
             .map(ScenarioConfig::summary)
             .collect()
+    }
+
+    pub fn get_world_layout(&self) -> WorldLayout {
+        let engine = self.engine.lock();
+        engine.world_layout.clone()
     }
 
     pub fn set_run_state(&self, next_state: RunState) -> Result<SimulationSnapshot> {
@@ -189,6 +199,8 @@ struct Engine {
     simulator: Simulator,
     scenarios: Vec<ScenarioConfig>,
     active_scenario_id: String,
+    resolved_scenario: ScenarioConfig,
+    world_layout: WorldLayout,
     controller: ControllerState,
     run_state: RunState,
     last_status: String,
@@ -249,8 +261,10 @@ impl Engine {
     }
 
     fn set_controller_mode(&mut self, mode: ControllerMode) -> Result<()> {
+        let frame = self.simulator.frame();
         self.controller = ControllerState::new(mode);
         self.controller.reset();
+        self.controller.sync_with_frame(self.run_state, &frame);
         self.last_status = format!("Controller switched to {:?}.", mode);
         self.sync_snapshot(None)
     }
@@ -268,8 +282,9 @@ impl Engine {
             .ok_or_else(|| anyhow!("unknown scenario id: {scenario_id}"))?;
 
         self.active_scenario_id = scenario.id.clone();
+        self.resolve_active_world()?;
         self.run_state = RunState::Stopped;
-        self.simulator.reset(&scenario);
+        self.simulator.reset(&self.resolved_scenario)?;
         self.controller.reset();
         self.last_status = format!("Scenario loaded: {}.", scenario.name);
         self.sync_snapshot(None)
@@ -277,7 +292,7 @@ impl Engine {
 
     fn reset_current(&mut self, status: &str) -> Result<()> {
         let scenario = self.active_scenario()?.clone();
-        self.simulator.reset(&scenario);
+        self.simulator.reset(&scenario)?;
         self.controller.reset();
         self.last_status = status.into();
         self.sync_snapshot(None)
@@ -288,7 +303,10 @@ impl Engine {
         let frame = self.simulator.frame();
         let assist_level = self.controller.assist_level();
         let (flight_phase, motors_armed) = if self.controller.mode() == ControllerMode::Player {
-            (self.controller.flight_phase(), self.controller.motors_armed())
+            (
+                self.controller.flight_phase(),
+                self.controller.motors_armed(),
+            )
         } else if matches!(self.run_state, RunState::Running | RunState::Paused) {
             (FlightPhase::Airborne, true)
         } else {
@@ -309,10 +327,33 @@ impl Engine {
     }
 
     fn active_scenario(&self) -> Result<&ScenarioConfig> {
+        if self.resolved_scenario.id == self.active_scenario_id {
+            Ok(&self.resolved_scenario)
+        } else {
+            Err(anyhow!(
+                "active scenario not resolved: {}",
+                self.active_scenario_id
+            ))
+        }
+    }
+
+    fn active_base_scenario(&self) -> Result<&ScenarioConfig> {
         self.scenarios
             .iter()
             .find(|scenario| scenario.id == self.active_scenario_id)
-            .ok_or_else(|| anyhow!("active scenario not found: {}", self.active_scenario_id))
+            .ok_or_else(|| {
+                anyhow!(
+                    "active base scenario not found: {}",
+                    self.active_scenario_id
+                )
+            })
+    }
+
+    fn resolve_active_world(&mut self) -> Result<()> {
+        let base = self.active_base_scenario()?.clone();
+        self.world_layout = resolve_world_layout(&base.id);
+        self.resolved_scenario = apply_world_to_scenario(&base, &self.world_layout);
+        Ok(())
     }
 }
 
@@ -342,7 +383,7 @@ fn build_snapshot(
         drone: frame.drone.clone(),
         sensors: frame.sensors.clone(),
         environment: frame.environment.clone(),
-        obstacles: frame.obstacles.clone(),
+        obstacles: Vec::new(),
         waypoints: frame.waypoints.clone(),
     }
 }

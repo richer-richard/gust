@@ -35,6 +35,7 @@ struct Scenario {
   double gust_cell_size = 6.0;
   double duration_s = 30.0;
   FaultProfile faults;
+  Vec3 start_position;
   std::vector<Obstacle> obstacles;
   std::vector<Waypoint> waypoints;
 };
@@ -57,6 +58,7 @@ struct DroneFrame {
   bool collision = false;
   double closest_obstacle_distance = 0.0;
   double recovery_margin = 0.0;
+  double clearance_agl = 0.0;
   double health = 1.0;
 };
 
@@ -89,6 +91,8 @@ class Simulator {
  private:
   [[nodiscard]] Vec3 sample_wind() const;
   [[nodiscard]] SensorPacket build_sensor_packet(const Vec3 &world_accel);
+  [[nodiscard]] double support_height_below(const Vec3 &position) const;
+  [[nodiscard]] double clearance_agl() const;
   void resolve_collisions();
   void update_recovery_margin();
 
@@ -99,13 +103,14 @@ class Simulator {
   std::uint64_t tick_ = 0;
   double sim_time_s_ = 0.0;
 
-  Vec3 position_{0.0, 0.0, 25.0};
+  Vec3 position_{0.0, 0.0, 0.26};
   Vec3 velocity_{};
   Vec3 euler_{};
   Vec3 angular_velocity_{};
   Vec3 last_world_accel_{};
-  Vec3 last_gps_position_{0.0, 0.0, 25.0};
+  Vec3 last_gps_position_{0.0, 0.0, 0.26};
   Vec3 current_wind_{};
+  SensorPacket sensor_packet_{};
   std::array<double, 4> rotor_command_{0.62, 0.62, 0.62, 0.62};
   std::array<double, 4> rotor_rpm_{};
   bool collision_ = false;
@@ -117,4 +122,3 @@ class Simulator {
 };
 
 }  // namespace gust::sim
-

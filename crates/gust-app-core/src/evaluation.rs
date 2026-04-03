@@ -24,7 +24,8 @@ pub fn run_quick_evaluation(scenario: &ScenarioConfig) -> Result<EvaluationRepor
         let mut collision_frames = 0u32;
         let mut recovery_events = 0u32;
         let mut tracking_error = 0.0;
-        let mut max_waypoint_index = 0usize;
+        let mut max_completed_waypoints = 0usize;
+        let mut recovery_active = false;
 
         for _ in 0..total_steps {
             let frame = simulator.frame();
@@ -33,13 +34,12 @@ pub fn run_quick_evaluation(scenario: &ScenarioConfig) -> Result<EvaluationRepor
             if frame.drone.collision {
                 collision_frames += 1;
             }
-            if output.recovery_event {
+            if output.recovery_event && !recovery_active {
                 recovery_events += 1;
             }
+            recovery_active = output.recovery_event;
 
-            if let Some(index) = output.active_waypoint_index {
-                max_waypoint_index = max_waypoint_index.max(index);
-            }
+            max_completed_waypoints = max_completed_waypoints.max(output.completed_waypoint_count);
 
             if let Some(target) = scenario
                 .waypoints
@@ -59,7 +59,7 @@ pub fn run_quick_evaluation(scenario: &ScenarioConfig) -> Result<EvaluationRepor
         let path_completion = if scenario.waypoints.is_empty() {
             1.0
         } else {
-            (max_waypoint_index as f64 + 1.0) / scenario.waypoints.len() as f64
+            max_completed_waypoints as f64 / scenario.waypoints.len() as f64
         };
         let mean_tracking_error = if total_steps == 0 {
             0.0

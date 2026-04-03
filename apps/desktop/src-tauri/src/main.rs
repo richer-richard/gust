@@ -3,8 +3,9 @@
 use gust_app_core::SimulationService;
 use gust_types::{
     AssistLevel, ControllerMode, EvaluationReport, PlayerInput, RunState, ScenarioSummary,
-    SimulationSnapshot,
+    SimulationSnapshot, WorldLayout,
 };
+use tauri::Manager;
 
 #[tauri::command]
 fn get_snapshot(
@@ -18,6 +19,11 @@ fn list_scenarios(
     service: tauri::State<'_, SimulationService>,
 ) -> Result<Vec<ScenarioSummary>, String> {
     Ok(service.list_scenarios())
+}
+
+#[tauri::command]
+fn get_world_layout(service: tauri::State<'_, SimulationService>) -> Result<WorldLayout, String> {
+    Ok(service.get_world_layout())
 }
 
 #[tauri::command]
@@ -60,10 +66,7 @@ fn set_player_input(
 }
 
 #[tauri::command]
-fn take_damage(
-    amount: f64,
-    service: tauri::State<'_, SimulationService>,
-) -> Result<(), String> {
+fn take_damage(amount: f64, service: tauri::State<'_, SimulationService>) -> Result<(), String> {
     service.take_damage(amount);
     Ok(())
 }
@@ -96,6 +99,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             list_scenarios,
+            get_world_layout,
             set_run_state,
             set_controller_mode,
             activate_scenario,
@@ -108,6 +112,11 @@ fn main() {
             // Create default native menu (macOS: Cmd+Q quit, Cmd+C/V copy/paste, etc.)
             let menu = tauri::menu::Menu::default(app.handle())?;
             app.set_menu(menu)?;
+
+            if let Some(window) = app.get_webview_window("main") {
+                window.maximize()?;
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

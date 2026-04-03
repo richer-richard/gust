@@ -1,0 +1,49 @@
+{
+  "id": "city_flyover_cloudy",
+  "name": "Cloudy Flyover",
+  "description": "Overcast launch through the lower tower canyons with heavier gusts, softer visibility, and a tighter route between downtown blocks.",
+  "baseWind": { "x": 1.7, "y": 0.85, "z": 0.0 },
+  "gustAmplitude": 1.9,
+  "gustCellSize": 16.0,
+  "durationS": 60.0,
+  "faults": {
+    "gpsDropoutEnabled": false,
+    "altimeterBiasM": 0.08,
+    "imuNoiseScale": 0.12
+  },
+  "obstacles": [],
+  "waypoints": [
+    {
+      "position": { "x": -10.0, "y": 0.0, "z": 6.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": 44.0, "y": -34.0, "z": 10.0 },
+      "holdS": 0.8
+    },
+    {
+      "position": { "x": 88.0, "y": -52.0, "z": 14.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": 118.0, "y": 8.0, "z": 16.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": 58.0, "y": 78.0, "z": 13.0 },
+      "holdS": 0.9
+    },
+    {
+      "position": { "x": -26.0, "y": 96.0, "z": 12.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -74.0, "y": 38.0, "z": 9.0 },
+      "holdS": 1.0
+    },
+    {
+      "position": { "x": -10.0, "y": 0.0, "z": 8.0 },
+      "holdS": 1.3
+    }
+  ]
+}

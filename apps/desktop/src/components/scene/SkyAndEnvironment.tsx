@@ -10,10 +10,11 @@ interface SkyAndEnvironmentProps {
 }
 
 export function SkyAndEnvironment({ theme }: SkyAndEnvironmentProps) {
-  const { lighting, sky, fogColor, fogNear, fogFar } = theme;
+  const { backgroundColor, lighting, shadows, sky, fogColor, fogNear, fogFar } = theme;
 
   return (
     <>
+      <color attach="background" args={[backgroundColor]} />
       <Sky
         distance={sky.distance}
         sunPosition={sky.sunPosition}
@@ -30,13 +31,14 @@ export function SkyAndEnvironment({ theme }: SkyAndEnvironmentProps) {
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
-        shadow-camera-left={-180}
-        shadow-camera-right={180}
-        shadow-camera-top={180}
-        shadow-camera-bottom={-180}
+        shadow-camera-left={-shadows.area}
+        shadow-camera-right={shadows.area}
+        shadow-camera-top={shadows.area}
+        shadow-camera-bottom={-shadows.area}
         shadow-camera-near={0.5}
-        shadow-camera-far={900}
-        shadow-bias={-0.0004}
+        shadow-camera-far={shadows.far}
+        shadow-bias={shadows.bias}
+        shadow-normalBias={shadows.normalBias}
       />
 
       <directionalLight

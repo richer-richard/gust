@@ -7,7 +7,6 @@ use gust_types::{
     SensorTelemetry, Vec3, Waypoint,
 };
 
-const MAX_OBSTACLES: usize = 16;
 const MAX_WAYPOINTS: usize = 16;
 
 #[derive(Clone, Debug)]
@@ -31,17 +30,20 @@ unsafe impl Send for Simulator {}
 
 impl Simulator {
     pub fn new(config: &ScenarioConfig) -> Result<Self> {
-        let ffi_config = GustScenarioConfig::from(config);
-        let raw = unsafe { gust_sim_create(&ffi_config) };
+        validate_scenario(config)?;
+        let ffi_config = OwnedScenarioConfig::from_scenario(config);
+        let raw = unsafe { gust_sim_create(&ffi_config.raw) };
         let raw = NonNull::new(raw).ok_or_else(|| anyhow!("failed to create Gust simulator"))?;
         Ok(Self { raw })
     }
 
-    pub fn reset(&mut self, config: &ScenarioConfig) {
-        let ffi_config = GustScenarioConfig::from(config);
+    pub fn reset(&mut self, config: &ScenarioConfig) -> Result<()> {
+        validate_scenario(config)?;
+        let ffi_config = OwnedScenarioConfig::from_scenario(config);
         unsafe {
-            gust_sim_reset(self.raw.as_ptr(), &ffi_config);
+            gust_sim_reset(self.raw.as_ptr(), &ffi_config.raw);
         }
+        Ok(())
     }
 
     pub fn set_rotor_command(&mut self, normalized: [f64; 4]) {
@@ -115,50 +117,48 @@ struct GustScenarioConfig {
     gust_cell_size: f64,
     duration_s: f64,
     faults: GustFaultProfile,
+    start_position: GustVec3,
     obstacle_count: u32,
-    obstacles: [GustObstacleBox; MAX_OBSTACLES],
+    obstacles: *const GustObstacleBox,
     waypoint_count: u32,
-    waypoints: [GustWaypoint; MAX_WAYPOINTS],
+    waypoints: *const GustWaypoint,
 }
 
-impl Default for GustScenarioConfig {
-    fn default() -> Self {
-        Self {
-            base_wind: GustVec3::default(),
-            gust_amplitude: 0.0,
-            gust_cell_size: 6.0,
-            duration_s: 30.0,
-            faults: GustFaultProfile::default(),
-            obstacle_count: 0,
-            obstacles: [GustObstacleBox::default(); MAX_OBSTACLES],
-            waypoint_count: 0,
-            waypoints: [GustWaypoint::default(); MAX_WAYPOINTS],
-        }
-    }
+struct OwnedScenarioConfig {
+    raw: GustScenarioConfig,
+    _obstacles: Vec<GustObstacleBox>,
+    _waypoints: Vec<GustWaypoint>,
 }
 
-impl From<&ScenarioConfig> for GustScenarioConfig {
-    fn from(value: &ScenarioConfig) -> Self {
-        let mut config = Self {
+impl OwnedScenarioConfig {
+    fn from_scenario(value: &ScenarioConfig) -> Self {
+        let obstacles: Vec<GustObstacleBox> =
+            value.obstacles.iter().map(GustObstacleBox::from).collect();
+        let waypoints: Vec<GustWaypoint> = value
+            .waypoints
+            .iter()
+            .take(MAX_WAYPOINTS)
+            .map(GustWaypoint::from)
+            .collect();
+
+        let raw = GustScenarioConfig {
             base_wind: value.base_wind.into(),
             gust_amplitude: value.gust_amplitude,
             gust_cell_size: value.gust_cell_size,
             duration_s: value.duration_s,
             faults: GustFaultProfile::from(&value.faults),
-            ..Self::default()
+            start_position: value.start_position.into(),
+            obstacle_count: obstacles.len() as u32,
+            obstacles: obstacles.as_ptr(),
+            waypoint_count: waypoints.len() as u32,
+            waypoints: waypoints.as_ptr(),
         };
 
-        for (index, obstacle) in value.obstacles.iter().take(MAX_OBSTACLES).enumerate() {
-            config.obstacles[index] = GustObstacleBox::from(obstacle);
+        Self {
+            raw,
+            _obstacles: obstacles,
+            _waypoints: waypoints,
         }
-        config.obstacle_count = value.obstacles.len().min(MAX_OBSTACLES) as u32;
-
-        for (index, waypoint) in value.waypoints.iter().take(MAX_WAYPOINTS).enumerate() {
-            config.waypoints[index] = GustWaypoint::from(waypoint);
-        }
-        config.waypoint_count = value.waypoints.len().min(MAX_WAYPOINTS) as u32;
-
-        config
     }
 }
 
@@ -190,6 +190,7 @@ struct GustDroneFrame {
     collision: u32,
     closest_obstacle_distance: f64,
     recovery_margin: f64,
+    clearance_agl: f64,
     health: f64,
 }
 
@@ -209,8 +210,6 @@ struct GustStateFrame {
     drone: GustDroneFrame,
     sensors: GustSensorPacket,
     environment: GustEnvironmentFrame,
-    obstacle_count: u32,
-    obstacles: [GustObstacleBox; MAX_OBSTACLES],
     waypoint_count: u32,
     waypoints: [GustWaypoint; MAX_WAYPOINTS],
 }
@@ -223,8 +222,6 @@ impl Default for GustStateFrame {
             drone: GustDroneFrame::default(),
             sensors: GustSensorPacket::default(),
             environment: GustEnvironmentFrame::default(),
-            obstacle_count: 0,
-            obstacles: [GustObstacleBox::default(); MAX_OBSTACLES],
             waypoint_count: 0,
             waypoints: [GustWaypoint::default(); MAX_WAYPOINTS],
         }
@@ -233,11 +230,6 @@ impl Default for GustStateFrame {
 
 impl From<GustStateFrame> for NativeFrame {
     fn from(value: GustStateFrame) -> Self {
-        let obstacles = value.obstacles[..value.obstacle_count as usize]
-            .iter()
-            .copied()
-            .map(ObstacleBox::from)
-            .collect();
         let waypoints = value.waypoints[..value.waypoint_count as usize]
             .iter()
             .copied()
@@ -256,6 +248,7 @@ impl From<GustStateFrame> for NativeFrame {
                 collision: value.drone.collision != 0,
                 closest_obstacle_distance: value.drone.closest_obstacle_distance,
                 recovery_margin: value.drone.recovery_margin,
+                clearance_agl: value.drone.clearance_agl,
                 health: value.drone.health,
             },
             sensors: SensorTelemetry {
@@ -271,7 +264,7 @@ impl From<GustStateFrame> for NativeFrame {
                 gust_strength: value.environment.gust_strength,
                 turbulence_index: value.environment.turbulence_index,
             },
-            obstacles,
+            obstacles: Vec::new(),
             waypoints,
         }
     }
@@ -352,4 +345,17 @@ unsafe extern "C" {
     fn gust_sim_step(handle: *mut GustSimHandle, dt: f64);
     fn gust_sim_take_damage(handle: *mut GustSimHandle, amount: f64);
     fn gust_sim_get_frame(handle: *const GustSimHandle) -> GustStateFrame;
+}
+
+fn validate_scenario(config: &ScenarioConfig) -> Result<()> {
+    if config.waypoints.len() > MAX_WAYPOINTS {
+        return Err(anyhow!(
+            "scenario '{}' has {} waypoints, but the native simulator supports at most {}",
+            config.id,
+            config.waypoints.len(),
+            MAX_WAYPOINTS
+        ));
+    }
+
+    Ok(())
 }
