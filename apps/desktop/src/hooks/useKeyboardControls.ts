@@ -8,16 +8,16 @@ import type { PlayerInput } from '../lib/types';
 
 const KEY_MAP: Record<string, keyof typeof AXIS_MAP> = {
   KeyW: 'pitchPos',
+  ArrowUp: 'pitchPos',
   KeyS: 'pitchNeg',
+  ArrowDown: 'pitchNeg',
   KeyA: 'rollNeg',
+  ArrowLeft: 'rollNeg',
   KeyD: 'rollPos',
-  ArrowLeft: 'yawNeg',
-  ArrowRight: 'yawPos',
+  ArrowRight: 'rollPos',
   KeyQ: 'yawNeg',
   KeyE: 'yawPos',
-  ArrowUp: 'throttlePos',
   Space: 'throttlePos',
-  ArrowDown: 'throttleNeg',
   ShiftLeft: 'throttleNeg',
   ShiftRight: 'throttleNeg',
 };

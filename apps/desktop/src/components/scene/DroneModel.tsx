@@ -7,8 +7,6 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { SimulationSnapshot } from '../../lib/types';
 
-const SMOKE_COLOR = new THREE.Color(0.15, 0.12, 0.1);
-
 interface DroneModelProps {
   snapshot: SimulationSnapshot | null;
 }
@@ -40,60 +38,30 @@ export function DroneModel({ snapshot }: DroneModelProps) {
   const euler = snapshot?.drone.euler ?? { x: 0, y: 0, z: 0 };
   const rotorRpm = snapshot?.drone.rotorRpm ?? [4000, 4000, 4000, 4000];
   const collision = snapshot?.drone.collision ?? false;
-  const health = snapshot?.drone.health ?? 1;
 
-  const smokeParticlesRef = useRef<THREE.Mesh[]>([]);
-
-  // Animate propellers + health-based visual effects
+  // Animate propellers and LEDs
   useFrame((_, delta) => {
-    // Health-based prop speed modifier
-    const healthSpeedMod = health <= 0 ? 0 : health < 0.2 ? 0.4 : 1;
-
     propRefs.current.forEach((prop, i) => {
       if (prop) {
-        const rpm = (rotorRpm[i] ?? 4000) * healthSpeedMod;
+        const rpm = rotorRpm[i] ?? 4000;
         const rps = rpm / 60;
         prop.rotation.y += rps * Math.PI * 2 * delta;
       }
     });
 
-    // Pulse LEDs — dimmer at low health
+    // Pulse LEDs
     ledRefs.current.forEach((led) => {
       if (led && led.material instanceof THREE.MeshStandardMaterial) {
         const t = performance.now() * 0.003;
-        const healthDim = health < 0.2 ? 0.3 : 1;
-        led.material.emissiveIntensity = (1.5 + Math.sin(t) * 0.5) * healthDim;
+        led.material.emissiveIntensity = 1.5 + Math.sin(t) * 0.5;
       }
     });
 
-    // Prop blur opacity based on RPM and health
+    // Prop blur opacity based on RPM
     propBlurRefs.current.forEach((blur, i) => {
       if (blur && blur.material instanceof THREE.MeshStandardMaterial) {
-        const rpm = (rotorRpm[i] ?? 4000) * healthSpeedMod;
+        const rpm = rotorRpm[i] ?? 4000;
         blur.material.opacity = Math.min(0.3, rpm / 15000);
-      }
-    });
-
-    // Animate smoke particles when health < 0.5
-    smokeParticlesRef.current.forEach((smoke, i) => {
-      if (smoke) {
-        if (health < 0.5) {
-          smoke.visible = true;
-          const speed = health < 0.2 ? 3 : 1.5;
-          smoke.position.y += speed * delta;
-          // Reset when too high
-          if (smoke.position.y > 1.5) {
-            smoke.position.y = 0.02;
-            smoke.position.x = (Math.random() - 0.5) * 0.08;
-            smoke.position.z = (Math.random() - 0.5) * 0.08;
-          }
-          const opacity = health < 0.2 ? 0.6 : 0.3;
-          if (smoke.material instanceof THREE.MeshStandardMaterial) {
-            smoke.material.opacity = opacity * (1 - smoke.position.y / 1.5);
-          }
-        } else {
-          smoke.visible = false;
-        }
       }
     });
   });
@@ -109,13 +77,7 @@ export function DroneModel({ snapshot }: DroneModelProps) {
     []
   );
 
-  // Health-based body color: normal → orange flicker → red at critical
-  const bodyColorFinal =
-    health <= 0 ? new THREE.Color(0.4, 0.05, 0.0) :
-    health < 0.2 ? COLLISION_COLOR :
-    health < 0.5 && Math.sin(performance.now() * 0.01) > 0.3 ? COLLISION_COLOR :
-    collision ? COLLISION_COLOR :
-    BODY_COLOR;
+  const bodyColorFinal = collision ? COLLISION_COLOR : BODY_COLOR;
 
   return (
     <group
@@ -125,6 +87,7 @@ export function DroneModel({ snapshot }: DroneModelProps) {
       position={[position.x, position.z, -position.y]}
       rotation={[euler.x, -euler.z, euler.y]}
     >
+    <group scale={[3.6, 3.6, 3.6]}>
       {/* Central body - main fuselage */}
       <mesh castShadow>
         <boxGeometry args={[0.12, 0.045, 0.12]} />
@@ -284,40 +247,17 @@ export function DroneModel({ snapshot }: DroneModelProps) {
         );
       })}
 
-      {/* Downward light (landing light) — dims with health */}
+      {/* Downward light (landing light) */}
       <spotLight
         position={[0, -0.06, 0]}
         target-position={[0, -5, 0]}
         color="#ffffff"
-        intensity={health > 0.2 ? 0.8 : 0.2}
+        intensity={0.8}
         distance={15}
         angle={0.6}
         penumbra={0.5}
       />
-
-      {/* Smoke particles — visible when health < 50% */}
-      {Array.from({ length: 6 }).map((_, i) => (
-        <mesh
-          key={`smoke-${i}`}
-          position={[
-            (Math.random() - 0.5) * 0.06,
-            0.02 + i * 0.2,
-            (Math.random() - 0.5) * 0.06,
-          ]}
-          visible={false}
-          ref={(el) => {
-            if (el) smokeParticlesRef.current[i] = el;
-          }}
-        >
-          <sphereGeometry args={[0.02 + i * 0.005, 6, 4]} />
-          <meshStandardMaterial
-            color={SMOKE_COLOR}
-            transparent
-            opacity={0.3}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+    </group>
     </group>
   );
 }

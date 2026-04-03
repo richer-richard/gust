@@ -42,10 +42,6 @@ export async function setPlayerInput(input: PlayerInput): Promise<void> {
   return invoke<void>("set_player_input", { input });
 }
 
-export async function takeDamage(amount: number): Promise<void> {
-  return invoke<void>("take_damage", { amount });
-}
-
 export async function setAssistLevel(level: AssistLevel): Promise<SimulationSnapshot> {
   return invoke<SimulationSnapshot>("set_assist_level", { level });
 }

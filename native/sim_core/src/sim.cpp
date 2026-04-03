@@ -172,6 +172,31 @@ void Simulator::reset(Scenario scenario) {
   turbulence_index_ = 0.0;
   health_ = 1.0;
   sensor_packet_ = build_sensor_packet(last_world_accel_);
+  build_spatial_grid();
+}
+
+void Simulator::build_spatial_grid() {
+  spatial_grid_.clear();
+  for (size_t i = 0; i < scenario_.obstacles.size(); ++i) {
+    const auto &obs = scenario_.obstacles[i];
+    const auto half = obs.size * 0.5;
+    const auto min_x = obs.center.x - half.x;
+    const auto max_x = obs.center.x + half.x;
+    const auto min_z = obs.center.y - half.y;
+    const auto max_z = obs.center.y + half.y;
+
+    const auto cell_min_x = static_cast<int64_t>(std::floor(min_x / kCellSize));
+    const auto cell_max_x = static_cast<int64_t>(std::floor(max_x / kCellSize));
+    const auto cell_min_z = static_cast<int64_t>(std::floor(min_z / kCellSize));
+    const auto cell_max_z = static_cast<int64_t>(std::floor(max_z / kCellSize));
+
+    for (auto cx = cell_min_x; cx <= cell_max_x; ++cx) {
+      for (auto cz = cell_min_z; cz <= cell_max_z; ++cz) {
+        const auto key = cx * 100003 + cz;
+        spatial_grid_[key].push_back(i);
+      }
+    }
+  }
 }
 
 void Simulator::set_rotor_command(const std::array<double, 4> &command) {
@@ -309,47 +334,62 @@ void Simulator::resolve_collisions() {
     collision_ = true;
   }
 
-  for (const auto &obstacle : scenario_.obstacles) {
-    const auto signed_distance = sphere_to_box_distance(position_, obstacle);
-    closest_obstacle_distance_ = std::min(closest_obstacle_distance_, signed_distance);
+  // Compute the drone's grid cell and check the 3x3 neighborhood
+  const auto drone_cx = static_cast<int64_t>(std::floor(position_.x / kCellSize));
+  const auto drone_cz = static_cast<int64_t>(std::floor(position_.y / kCellSize));
 
-    if (signed_distance >= 0.0) {
-      continue;
-    }
+  for (int64_t dx = -1; dx <= 1; ++dx) {
+    for (int64_t dz = -1; dz <= 1; ++dz) {
+      const auto key = (drone_cx + dx) * 100003 + (drone_cz + dz);
+      const auto it = spatial_grid_.find(key);
+      if (it == spatial_grid_.end()) {
+        continue;
+      }
 
-    const auto closest = closest_point_on_box(position_, obstacle);
-    auto normal = normalized(position_ - closest);
-    if (length(normal) < 1e-6) {
-      const auto delta = position_ - obstacle.center;
-      const auto half = obstacle.size * 0.5;
-      const auto px = half.x - std::abs(delta.x);
-      const auto py = half.y - std::abs(delta.y);
-      const auto pz = half.z - std::abs(delta.z);
+      for (const auto idx : it->second) {
+        const auto &obstacle = scenario_.obstacles[idx];
+        const auto signed_distance = sphere_to_box_distance(position_, obstacle);
+        closest_obstacle_distance_ = std::min(closest_obstacle_distance_, signed_distance);
 
-      if (px <= py && px <= pz) {
-        normal = make_vec(delta.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
-      } else if (py <= px && py <= pz) {
-        normal = make_vec(0.0, delta.y >= 0.0 ? 1.0 : -1.0, 0.0);
-      } else {
-        normal = make_vec(0.0, 0.0, delta.z >= 0.0 ? 1.0 : -1.0);
+        if (signed_distance >= 0.0) {
+          continue;
+        }
+
+        const auto closest = closest_point_on_box(position_, obstacle);
+        auto normal = normalized(position_ - closest);
+        if (length(normal) < 1e-6) {
+          const auto delta = position_ - obstacle.center;
+          const auto half = obstacle.size * 0.5;
+          const auto px = half.x - std::abs(delta.x);
+          const auto py = half.y - std::abs(delta.y);
+          const auto pz = half.z - std::abs(delta.z);
+
+          if (px <= py && px <= pz) {
+            normal = make_vec(delta.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
+          } else if (py <= px && py <= pz) {
+            normal = make_vec(0.0, delta.y >= 0.0 ? 1.0 : -1.0, 0.0);
+          } else {
+            normal = make_vec(0.0, 0.0, delta.z >= 0.0 ? 1.0 : -1.0);
+          }
+        }
+
+        position_ += normal * (-signed_distance + 1e-3);
+        const auto normal_speed = dot(velocity_, normal);
+        if (normal_speed < 0.0) {
+          // Velocity-scaled restitution: harder hits bounce more
+          const auto restitution = 1.25 + std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.5);
+          velocity_ -= normal * (restitution * normal_speed);
+          velocity_ *= 0.82;
+
+          // Apply damage proportional to impact speed
+          const auto impact_damage = std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.25);
+          health_ = std::max(0.0, health_ - impact_damage);
+        }
+
+        angular_velocity_ *= 0.88;
+        collision_ = true;
       }
     }
-
-    position_ += normal * (-signed_distance + 1e-3);
-    const auto normal_speed = dot(velocity_, normal);
-    if (normal_speed < 0.0) {
-      // Velocity-scaled restitution: harder hits bounce more
-      const auto restitution = 1.25 + std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.5);
-      velocity_ -= normal * (restitution * normal_speed);
-      velocity_ *= 0.82;
-
-      // Apply damage proportional to impact speed
-      const auto impact_damage = std::clamp(std::abs(normal_speed) * 0.04, 0.0, 0.25);
-      health_ = std::max(0.0, health_ - impact_damage);
-    }
-
-    angular_velocity_ *= 0.88;
-    collision_ = true;
   }
 
   if (closest_obstacle_distance_ == std::numeric_limits<double>::max()) {

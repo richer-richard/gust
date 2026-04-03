@@ -1,89 +1,112 @@
-import type { ThemeId, ThemeOption } from '../../lib/theme';
+import type { WeatherId, TimeOfDay } from '../../lib/theme';
 
 interface LandingOverlayProps {
-  selectedThemeId: ThemeId;
-  themeOptions: ThemeOption[];
-  onSelectTheme: (themeId: ThemeId) => void;
+  weather: WeatherId;
+  timeOfDay: TimeOfDay;
+  trailEnabled: boolean;
+  onWeatherChange: (w: WeatherId) => void;
+  onTimeOfDayChange: (t: TimeOfDay) => void;
+  onTrailToggle: (v: boolean) => void;
   onStart: () => void;
   isLaunching: boolean;
 }
 
+const WEATHER_OPTIONS: { id: WeatherId; label: string; icon: string }[] = [
+  { id: 'sunny', label: 'Sunny', icon: '\u2600\uFE0F' },
+  { id: 'cloudy', label: 'Cloudy', icon: '\u26C5' },
+  { id: 'snowy', label: 'Snow', icon: '\u2744\uFE0F' },
+];
+
 export function LandingOverlay({
-  selectedThemeId,
-  themeOptions,
-  onSelectTheme,
+  weather,
+  timeOfDay,
+  trailEnabled,
+  onWeatherChange,
+  onTimeOfDayChange,
+  onTrailToggle,
   onStart,
   isLaunching,
 }: LandingOverlayProps) {
   return (
     <div className="landing-shell">
       <div className="landing-panel">
-        <div className="landing-panel-scroll">
-          <div className="landing-eyebrow">Gust Flyover</div>
-          <h1 className="landing-title">Take a city tour from the plaza.</h1>
-          <p className="landing-copy">
-            Start cold on the central plaza, arm with Up, and thread through a bright
-            downtown ring with a camera built around aerial follow instead of a bottom-up chase.
-          </p>
-
-          <div className="landing-section">
-            <div className="landing-section-title">Mode</div>
-            <div className="landing-card-grid">
-              <button className="landing-card active" type="button">
-                <span className="landing-card-label">Flyover Mode</span>
-                <span className="landing-card-copy">
-                  Scenic assisted flight with live telemetry and the advanced control panel.
-                </span>
-              </button>
-              <button className="landing-card disabled" type="button" disabled>
-                <span className="landing-card-label">Combat Mode</span>
-                <span className="landing-card-badge">Coming soon</span>
-              </button>
-            </div>
+        <div className="landing-panel-inner">
+          {/* Brand */}
+          <div className="landing-brand">
+            <h1 className="landing-title">GUST</h1>
+            <p className="landing-subtitle">drone flight studio</p>
           </div>
 
+          {/* Weather */}
           <div className="landing-section">
-            <div className="landing-section-title">Theme</div>
-            <div className="landing-card-grid">
-              {themeOptions.map((option) => (
+            <div className="landing-label">Environment</div>
+            <div className="landing-weather-row">
+              {WEATHER_OPTIONS.map((opt) => (
                 <button
-                  key={option.id}
-                  className={[
-                    'landing-card',
-                    option.available ? '' : 'disabled',
-                    selectedThemeId === option.id ? 'active' : '',
-                  ].filter(Boolean).join(' ')}
+                  key={opt.id}
                   type="button"
-                  disabled={!option.available}
-                  onClick={() => option.available && onSelectTheme(option.id)}
+                  className={`landing-weather-pill${weather === opt.id ? ' active' : ''}`}
+                  onClick={() => onWeatherChange(opt.id)}
                 >
-                  <span className="landing-card-label">{option.label}</span>
-                  <span className="landing-card-copy">{option.description}</span>
-                  {!option.available && <span className="landing-card-badge">Coming soon</span>}
+                  <span className="landing-weather-icon">{opt.icon}</span>
+                  <span className="landing-weather-name">{opt.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="landing-footer">
-            <div className="landing-keyline">
-              <span>WASD</span>
-              <span>Horizontal motion</span>
+          {/* Toggles */}
+          <div className="landing-section">
+            <div className="landing-toggle-row">
+              <span className="landing-toggle-text">Night Mode</span>
+              <button
+                type="button"
+                className={`landing-toggle${timeOfDay === 'night' ? ' on' : ''}`}
+                onClick={() => onTimeOfDayChange(timeOfDay === 'day' ? 'night' : 'day')}
+              >
+                <span className="landing-toggle-knob" />
+              </button>
             </div>
-            <div className="landing-keyline">
-              <span>Arrow keys</span>
-              <span>Yaw and altitude control</span>
+            <div className="landing-toggle-row">
+              <span className="landing-toggle-text">Drone Trail</span>
+              <button
+                type="button"
+                className={`landing-toggle${trailEnabled ? ' on' : ''}`}
+                onClick={() => onTrailToggle(!trailEnabled)}
+              >
+                <span className="landing-toggle-knob" />
+              </button>
             </div>
-            <div className="landing-keyline">
-              <span>Trackpad</span>
-              <span>Zoom and orbit around the drone</span>
+          </div>
+
+          <div className="landing-sep" />
+
+          {/* Controls */}
+          <div className="landing-section">
+            <div className="landing-label">Controls</div>
+            <div className="landing-controls-grid">
+              <div className="landing-ctrl"><kbd>W / &uarr;</kbd><span>Forward</span></div>
+              <div className="landing-ctrl"><kbd>S / &darr;</kbd><span>Back</span></div>
+              <div className="landing-ctrl"><kbd>A / &larr;</kbd><span>Left</span></div>
+              <div className="landing-ctrl"><kbd>D / &rarr;</kbd><span>Right</span></div>
+              <div className="landing-ctrl"><kbd>Space</kbd><span>Ascend</span></div>
+              <div className="landing-ctrl"><kbd>Shift</kbd><span>Descend</span></div>
             </div>
           </div>
         </div>
 
-        <button className="landing-launch-btn" onClick={onStart} disabled={isLaunching}>
-          {isLaunching ? 'Launching...' : 'Launch Flyover'}
-        </button>
+        {/* Footer */}
+        <div className="landing-footer">
+          <button
+            className="landing-launch-btn"
+            onClick={onStart}
+            disabled={isLaunching}
+            type="button"
+          >
+            {isLaunching ? 'Launching...' : 'Launch'}
+          </button>
+          <div className="landing-version">v0.1.0</div>
+        </div>
       </div>
     </div>
   );

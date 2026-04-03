@@ -8,15 +8,15 @@ import { LandingOverlay } from './components/ui/LandingOverlay';
 import { CameraRecoveryInset } from './components/ui/CameraRecoveryInset';
 import { useSimulation } from './hooks/useSimulation';
 import { useSimulationStore } from './lib/store';
-import { SCENE_THEME_BY_ID, THEME_OPTIONS, type ThemeId } from './lib/theme';
+import { resolveTheme, type WeatherId, type TimeOfDay } from './lib/theme';
 import type { AssistLevel } from './lib/types';
 
 type SessionStage = 'landing' | 'launching' | 'active';
 
-const FLYOVER_SCENARIO_BY_THEME: Record<ThemeId, string> = {
+const FLYOVER_SCENARIO_BY_WEATHER: Record<WeatherId, string> = {
   sunny: 'city_flyover_sunny',
   cloudy: 'city_flyover_cloudy',
-  night: 'city_flyover_night',
+  snowy: 'city_flyover_cloudy',
 };
 
 export default function App() {
@@ -33,7 +33,9 @@ export default function App() {
   const runEvaluation = useSimulationStore((s) => s.runEvaluation);
 
   const [sessionStage, setSessionStage] = useState<SessionStage>('landing');
-  const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('sunny');
+  const [weather, setWeather] = useState<WeatherId>('sunny');
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day');
+  const [trailEnabled, setTrailEnabled] = useState(true);
   const [cameraMode, setCameraMode] = useState<'orbit' | 'follow' | 'topdown'>('follow');
   const [recenterSignal, setRecenterSignal] = useState(0);
   const [droneFramingLost, setDroneFramingLost] = useState(false);
@@ -45,10 +47,10 @@ export default function App() {
   useSimulation(playerControlsEnabled);
 
   const deferredSnapshot = useDeferredValue(snapshot);
-  const theme = useMemo(() => SCENE_THEME_BY_ID[selectedThemeId], [selectedThemeId]);
+  const theme = useMemo(() => resolveTheme(weather, timeOfDay), [weather, timeOfDay]);
   const assistLevel = (snapshot?.assistLevel ?? 'intent_assist') as AssistLevel;
   const sessionIsActive = sessionStage === 'active';
-  const activeFlyoverScenarioId = FLYOVER_SCENARIO_BY_THEME[selectedThemeId];
+  const activeFlyoverScenarioId = FLYOVER_SCENARIO_BY_WEATHER[weather];
   const showScenarioVisuals =
     sessionIsActive && !(snapshot?.activeScenarioId ?? '').startsWith('city_flyover_');
   const sceneReady = Boolean(snapshot && worldLayout);
@@ -110,6 +112,7 @@ export default function App() {
             previewMode={!sessionIsActive}
             showScenarioVisuals={showScenarioVisuals}
             recenterSignal={recenterSignal}
+            trailEnabled={trailEnabled}
             onDroneFramingChange={sessionIsActive ? setDroneFramingLost : undefined}
           />
         ) : null}
@@ -130,9 +133,12 @@ export default function App() {
 
         {snapshot && worldLayout && sessionStage === 'landing' && (
           <LandingOverlay
-            selectedThemeId={selectedThemeId}
-            themeOptions={THEME_OPTIONS}
-            onSelectTheme={setSelectedThemeId}
+            weather={weather}
+            timeOfDay={timeOfDay}
+            trailEnabled={trailEnabled}
+            onWeatherChange={setWeather}
+            onTimeOfDayChange={setTimeOfDay}
+            onTrailToggle={setTrailEnabled}
             onStart={launchFlyover}
             isLaunching={false}
           />
@@ -143,8 +149,6 @@ export default function App() {
             <Toolbar
               snapshot={snapshot}
               onRunStateChange={(s) => ignoreCommandError(setRunState(s))}
-              onControllerChange={(m) => ignoreCommandError(setControllerMode(m))}
-              sessionModeLabel="Flyover"
               themeLabel={theme.name}
               cameraMode={cameraMode}
               onCameraModeChange={setCameraMode}

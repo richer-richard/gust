@@ -3,22 +3,24 @@
  */
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { ContactShadows, OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { ProceduralCity } from './ProceduralCity';
 import { DroneModel } from './DroneModel';
 import { SkyAndEnvironment, CloudLayer } from './SkyAndEnvironment';
 import { WindParticles } from './WindParticles';
+import { SnowParticles } from './SnowParticles';
+import { DroneTrail } from './DroneTrail';
 import { WaypointMarkers } from './WaypointMarkers';
 import { PostEffects } from './PostEffects';
 import type { SceneTheme } from '../../lib/theme';
 import type { ObstacleBox, SimulationSnapshot, Vec3, WorldLayout } from '../../lib/types';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const FOLLOW_DEFAULT_DISTANCE = 18;
-const FOLLOW_MIN_DISTANCE = 9;
-const FOLLOW_MAX_DISTANCE = 92;
-const ORBIT_DEFAULT_DISTANCE = 36;
+const FOLLOW_DEFAULT_DISTANCE = 28;
+const FOLLOW_MIN_DISTANCE = 14;
+const FOLLOW_MAX_DISTANCE = 120;
+const ORBIT_DEFAULT_DISTANCE = 48;
 const LOST_DISTANCE_FOLLOW = 105;
 const LOST_DISTANCE_ORBIT = 180;
 const RECENTER_SETTLE_DISTANCE = 0.45;
@@ -32,6 +34,7 @@ interface CitySceneProps {
   showScenarioVisuals?: boolean;
   interactiveCamera?: boolean;
   recenterSignal?: number;
+  trailEnabled?: boolean;
   onDroneFramingChange?: (lost: boolean) => void;
 }
 
@@ -59,6 +62,7 @@ export function CityScene({
   showScenarioVisuals = true,
   interactiveCamera = true,
   recenterSignal = 0,
+  trailEnabled = true,
   onDroneFramingChange,
 }: CitySceneProps) {
   return (
@@ -84,26 +88,10 @@ export function CityScene({
         <CloudLayer theme={theme} />
         <ProceduralCity theme={theme} worldLayout={worldLayout} />
         <DroneModel snapshot={snapshot} />
+        <DroneTrail snapshot={snapshot} enabled={trailEnabled} />
         <WindParticles snapshot={snapshot} />
+        {theme.snow && <SnowParticles snapshot={snapshot} />}
         {showScenarioVisuals && <WaypointMarkers snapshot={snapshot} />}
-        <ContactShadows
-          position={[0, 0.06, 0]}
-          opacity={theme.shadows.contactOpacity}
-          scale={260}
-          blur={theme.shadows.contactBlur}
-          far={56}
-          resolution={1024}
-          color="#000000"
-        />
-        <ContactShadows
-          position={[0, worldLayout.launchSurfaceZ + 0.06, 0]}
-          opacity={theme.shadows.contactOpacity * 0.82}
-          scale={110}
-          blur={Math.max(1.0, theme.shadows.contactBlur * 0.8)}
-          far={30}
-          resolution={1024}
-          color="#000000"
-        />
         <CameraController
           snapshot={snapshot}
           worldLayout={worldLayout}
