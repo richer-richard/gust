@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 namespace gust::sim {
@@ -95,6 +96,10 @@ class Simulator {
   [[nodiscard]] double clearance_agl() const;
   void resolve_collisions();
   void update_recovery_margin();
+  void build_spatial_grid();
+
+  static constexpr double kCellSize = 30.0;
+  std::unordered_map<int64_t, std::vector<size_t>> spatial_grid_;
 
   Scenario scenario_;
   std::mt19937 rng_{7};

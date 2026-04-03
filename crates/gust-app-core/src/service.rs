@@ -170,13 +170,18 @@ fn spawn_worker(
     thread::spawn(move || {
         let step_duration = Duration::from_secs_f64(STEP_DT_S);
         let mut next_deadline = Instant::now() + step_duration;
+        let mut tick_count: u64 = 0;
 
         while !shutdown.load(Ordering::Relaxed) {
             {
                 let mut engine = engine.lock();
                 if matches!(engine.run_state, RunState::Running) {
                     if engine.tick().is_ok() {
-                        *snapshot.write() = engine.last_snapshot.clone();
+                        tick_count += 1;
+                        // Write snapshot at 30 Hz (every 4th tick) instead of 120 Hz
+                        if tick_count % 4 == 0 {
+                            *snapshot.write() = engine.last_snapshot.clone();
+                        }
                     }
                 } else {
                     *snapshot.write() = engine.last_snapshot.clone();

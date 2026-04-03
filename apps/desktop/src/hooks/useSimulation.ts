@@ -18,7 +18,7 @@ export function useSimulation(playerControlsEnabled: boolean) {
       }
       timeoutId = window.setTimeout(() => {
         void pollSnapshot();
-      }, 120);
+      }, 30);
     };
 
     const pollSnapshot = async () => {

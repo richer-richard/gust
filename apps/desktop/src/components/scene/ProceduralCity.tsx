@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { SceneTheme } from '../../lib/theme';
-import type { WorldBuilding, WorldLayout } from '../../lib/types';
+import type { WorldLayout } from '../../lib/types';
 
 const ATLAS_SIZE = 2048;
 const ATLAS_CELL = 8;
@@ -253,12 +253,14 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
     return () => atlasTexture.dispose();
   }, [atlasTexture]);
 
-  const { geometry, count } = useMemo(() => {
+  const { geometry, count, matrices } = useMemo(() => {
     const count = buildings.length;
     const geo = new THREE.BoxGeometry(1, 1, 1);
     const colors = new Float32Array(count * 3);
     const uvFront = new Float32Array(count * 4);
     const uvSide = new Float32Array(count * 4);
+    const matrixArray = new Float32Array(count * 16);
+    const dummy = new THREE.Object3D();
 
     for (let index = 0; index < count; index += 1) {
       const building = buildings[index];
@@ -267,6 +269,11 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
       colors[index * 3] = building.colorR;
       colors[index * 3 + 1] = building.colorG;
       colors[index * 3 + 2] = building.colorB;
+
+      dummy.position.set(collider.center.x, collider.center.z, -collider.center.y);
+      dummy.scale.set(collider.size.x, collider.size.z, collider.size.y);
+      dummy.updateMatrix();
+      dummy.matrix.toArray(matrixArray, index * 16);
 
       const bandIndex = Math.min(
         ATLAS_LIT_PCTS.length - 1,
@@ -299,24 +306,17 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
     geo.setAttribute('aUvFront', new THREE.InstancedBufferAttribute(uvFront, 4));
     geo.setAttribute('aUvSide', new THREE.InstancedBufferAttribute(uvSide, 4));
 
-    return { geometry: geo, count };
+    return { geometry: geo, count, matrices: matrixArray };
   }, [buildings]);
 
   useEffect(() => {
-    if (!meshRef.current) {
+    if (!meshRef.current || count === 0) {
       return;
     }
-
-    const dummy = new THREE.Object3D();
-    buildings.forEach((building: WorldBuilding, index) => {
-      const collider = building.collider;
-      dummy.position.set(collider.center.x, collider.center.z, -collider.center.y);
-      dummy.scale.set(collider.size.x, collider.size.z, collider.size.y);
-      dummy.updateMatrix();
-      meshRef.current?.setMatrixAt(index, dummy.matrix);
-    });
+    meshRef.current.instanceMatrix.array.set(matrices);
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [buildings]);
+    meshRef.current.computeBoundingSphere();
+  }, [matrices, count]);
 
   const buildingMaterial = useMemo(
     () =>
@@ -379,11 +379,11 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
   const pedestalMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: theme.id === 'night' ? '#5c6882' : '#6b6c6f',
+        color: theme.timeOfDay === 'night' ? '#5c6882' : '#6b6c6f',
         roughness: 0.55,
         metalness: 0.22,
       }),
-    [theme.id],
+    [theme.timeOfDay],
   );
 
   return (
@@ -451,7 +451,7 @@ export function ProceduralCity({ theme, worldLayout }: ProceduralCityProps) {
       <instancedMesh
         ref={meshRef}
         args={[geometry, buildingMaterial, count]}
-        frustumCulled={false}
+        frustumCulled={true}
         castShadow
         receiveShadow
       />
@@ -466,8 +466,8 @@ function RotorStatue({
   worldLayout: WorldLayout;
   theme: SceneTheme;
 }) {
-  const statueColor = theme.id === 'night' ? '#a9c7ff' : '#556577';
-  const accentColor = theme.id === 'night' ? '#ffd47c' : '#c4b28a';
+  const statueColor = theme.timeOfDay === 'night' ? '#a9c7ff' : '#556577';
+  const accentColor = theme.timeOfDay === 'night' ? '#ffd47c' : '#c4b28a';
   const center = worldLayout.landmark.center;
   const scale = worldLayout.landmark.scale;
 
@@ -488,8 +488,8 @@ function RotorStatue({
           color={accentColor}
           metalness={0.76}
           roughness={0.2}
-          emissive={theme.id === 'night' ? accentColor : '#000000'}
-          emissiveIntensity={theme.id === 'night' ? 0.18 : 0}
+          emissive={theme.timeOfDay === 'night' ? accentColor : '#000000'}
+          emissiveIntensity={theme.timeOfDay === 'night' ? 0.18 : 0}
         />
       </mesh>
 
@@ -517,8 +517,8 @@ function RotorStatue({
           color={accentColor}
           metalness={0.88}
           roughness={0.15}
-          emissive={theme.id === 'night' ? '#5e7db1' : '#000000'}
-          emissiveIntensity={theme.id === 'night' ? 0.28 : 0}
+          emissive={theme.timeOfDay === 'night' ? '#5e7db1' : '#000000'}
+          emissiveIntensity={theme.timeOfDay === 'night' ? 0.28 : 0}
         />
       </mesh>
     </group>
